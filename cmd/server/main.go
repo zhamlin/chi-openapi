@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"chi-openapi/pkg/openapi"
+	. "chi-openapi/pkg/openapi/operations"
 	"chi-openapi/pkg/router"
 )
 
@@ -97,13 +98,13 @@ func main() {
 		Description: "Give you all of the airplane details",
 		Version:     "v1.1.0",
 	})
-	// r.Get("/airplanes/{id}", router.OperationOptions{
+	// r.Get("/airplanes/{id}", router.Options{
 	// 	router.Summary("Get an airplane by id"),
 	// 	router.Params(GetAirplaneParams{}),
 	// 	router.JSONResponse(http.StatusOK, "success", Request{}),
 	// 	router.JSONResponse(http.StatusBadRequest, "bad request", nil),
 	// }, testHandler)
-	// r.Post("/airplanes", router.OperationOptions{
+	// r.Post("/airplanes", router.Options{
 	// 	router.Summary("Create an airplane"),
 	// 	// router.Body("airplane body", Request{}),
 	// 	router.JSONResponse(http.StatusCreated, "success", Request{}),
@@ -112,10 +113,10 @@ func main() {
 
 	r.Route("/v1", func(r *router.Router) {
 		r.Route("/another-level", func(r *router.Router) {
-			r.Post("/airplanes", router.OperationOptions{
-				router.Summary("Create an airplane"),
+			r.Post("/airplanes", Options{
+				Summary("Create an airplane"),
 				// router.Body("airplane body", Request{}),
-				router.JSONResponse(http.StatusCreated, "success", Request{}),
+				JSONResponse(http.StatusCreated, "success", Request{}),
 				// router.JSONResponse(http.StatusBadRequest, "bad request", nil),
 			}, testHandler)
 		})

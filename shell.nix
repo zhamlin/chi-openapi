@@ -1,9 +1,7 @@
 with import <nixpkgs> { };
 let
-  unstable = import <nixos-unstable> { };
   # define packages to install with special handling for OSX
-  basePackages =
-    [ gnumake gcc go_1_15 unstable.go-tools unstable.gopls unstable.goimports ];
+  basePackages = [ gnumake gcc go_1_15 go-tools gopls goimports ];
   inputs = basePackages ++ lib.optional stdenv.isLinux inotify-tools;
 
   shellHook = "";

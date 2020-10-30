@@ -21,14 +21,9 @@ func JSONT(t *testing.T, obj interface{}) string {
 	return val
 }
 
-func JSONDiff(t *testing.T, obj interface{}, data string) error {
-	val, err := JSON(obj)
-	if err != nil {
-		return err
-	}
-
+func JSONDiff(t *testing.T, input, expected string) error {
 	opts := jsondiff.DefaultConsoleOptions()
-	diff, show := jsondiff.Compare([]byte(data), []byte(val), &opts)
+	diff, show := jsondiff.Compare([]byte(expected), []byte(input), &opts)
 	if diff.String() != "FullMatch" {
 		return fmt.Errorf("%v:\n%v", diff, show)
 	}

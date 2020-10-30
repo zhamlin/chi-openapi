@@ -35,6 +35,13 @@ func Test_Params(t *testing.T) {
             ]
         `},
 		{
+			name: "basic no tag",
+			obj: struct {
+				Name string
+			}{},
+			expected: `[]`,
+		},
+		{
 			name: "array query param",
 			obj: struct {
 				IDs []string `query:"ids" required:"true" minItems:"1" maxItems:"3" doc:"test doc" explode:"true"`
@@ -60,8 +67,8 @@ func Test_Params(t *testing.T) {
         `},
 	}
 	for _, test := range tests {
-		params := openapi.SchemaFromParams(test.obj)
-		if err := JSONDiff(t, params, test.expected); err != nil {
+		params := openapi.ParamsFromObj(test.obj)
+		if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
 			t.Errorf("test '%v': %v", test.name, err)
 		}
 	}
