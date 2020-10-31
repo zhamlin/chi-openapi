@@ -98,11 +98,11 @@ func VerifyRequest(router *openapi3filter.Router, errFn ErrorHandler) func(http.
 type responseWriter struct {
 	body       []byte
 	statusCode int
-	headers    http.Header
+	header     http.Header
 }
 
 func (w *responseWriter) Header() http.Header {
-	return w.headers
+	return w.header
 }
 
 func (w *responseWriter) WriteHeader(statusCode int) {
@@ -128,14 +128,14 @@ func VerifyResponse(router *openapi3filter.Router, errFn ErrorHandler) func(http
 			}
 
 			rw := &responseWriter{
-				headers: w.Header(),
+				header: w.Header(),
 			}
 			next.ServeHTTP(rw, r)
 
 			validationInput := requestValidationInput(r)
 			validationInput.Route = route
 			input := &openapi3filter.ResponseValidationInput{
-				Header: rw.Header(),
+				Header: rw.header,
 				Status: rw.statusCode,
 				Options: &openapi3filter.Options{
 					IncludeResponseStatus: true,
