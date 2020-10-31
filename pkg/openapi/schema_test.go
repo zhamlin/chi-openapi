@@ -413,9 +413,51 @@ func TestSchemaArrays(t *testing.T) {
               "properties": {
                 "array": {
                   "items": {
-                    "type": "string"
+                    "type": "string",
+                    "format": "date-time"
                   },
                   "type": "array"
+                }
+              },
+              "type": "object"
+            }
+        `},
+		{
+			name: "array min max",
+			obj: struct {
+				Array []time.Time `json:"array" minItems:"1" maxItems:"10"`
+			}{},
+			expected: `
+            {
+              "properties": {
+                "array": {
+                  "items": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "type": "array",
+                  "maxItems": 10,
+                  "minItems": 1
+                }
+              },
+              "type": "object"
+            }
+        `},
+		{
+			name: "array uniqueItems",
+			obj: struct {
+				Array []time.Time `json:"array" uniqueItems:"true"`
+			}{},
+			expected: `
+            {
+              "properties": {
+                "array": {
+                  "items": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "type": "array",
+                  "uniqueItems": true
                 }
               },
               "type": "object"

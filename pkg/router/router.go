@@ -20,7 +20,7 @@ func NewRouter() *Router {
 		swagger: &openapi3.Swagger{
 			Info: &openapi3.Info{
 				Version: "0.0.1",
-				Title:   "The Title",
+				Title:   "Title",
 			},
 			OpenAPI: "3.0.1",
 			Paths:   openapi3.Paths{},

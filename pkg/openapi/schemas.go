@@ -63,6 +63,17 @@ func getSchemaTypeName(typ reflect.Type) string {
 	return name
 }
 
+var timeType = reflect.TypeOf(time.Time{})
+var timeKind = timeType.Kind()
+
+func timeSchema() *openapi3.Schema {
+	schema := openapi3.NewSchema()
+	schema.Type = "string"
+	// https://tools.ietf.org/html/rfc3339#section-5.6
+	schema.Format = "date-time"
+	return schema
+}
+
 func schemaFromType(schemas Schemas, typ reflect.Type, obj interface{}) *openapi3.SchemaRef {
 	schema := openapi3.NewSchema()
 	name := getSchemaTypeName(typ)
@@ -75,6 +86,11 @@ func schemaFromType(schemas Schemas, typ reflect.Type, obj interface{}) *openapi
 				Value: obj.Value,
 			}
 		}
+	}
+
+	switch typ {
+	case timeType:
+		return openapi3.NewSchemaRef("", timeSchema())
 	}
 
 	switch typ.Kind() {
@@ -108,8 +124,9 @@ func schemaFromType(schemas Schemas, typ reflect.Type, obj interface{}) *openapi
 		fallthrough
 	case reflect.Slice:
 		schema.Type = "array"
-		schema.Items = schemaFromType(schemas, typ.Elem(), nil)
+		schema.Items = schemaFromType(schemas, typ.Elem(), obj)
 	case reflect.Struct:
+		// handle special structs
 		inline := false
 		{
 			// check to see if the we should inline this schema via the SchemaInline method
@@ -127,23 +144,23 @@ func schemaFromType(schemas Schemas, typ reflect.Type, obj interface{}) *openapi
 			return openapi3.NewSchemaRef(componentSchemasPath+name, schemas[name].Value)
 		}
 	default:
-		fmt.Println(typ.Kind())
+		fmt.Println("DEFAULT", typ.Kind())
 	}
 	return openapi3.NewSchemaRef("", schema)
 }
-
-var timeKind = reflect.TypeOf(time.Time{}).Kind()
 
 func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *openapi3.Schema {
 	schema := &openapi3.Schema{
 		Type: "object",
 	}
 	schema.Properties = map[string]*openapi3.SchemaRef{}
-	objValue := reflect.ValueOf(obj)
+	objValue := reflect.Value{}
+	if obj != nil {
+		objValue = reflect.ValueOf(obj)
+	}
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		// fieldObj := objValue.Field(i).Elem().Type()
-		fieldObj := objValue.Field(i)
 
 		// json name lookup, ignore -, default to field name
 		name := field.Name
@@ -157,14 +174,32 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 		s := &openapi3.SchemaRef{}
 		// handle special structs here
 		switch field.Type.Kind() {
+		case reflect.Slice:
+			newObj := obj
+			if objValue.IsValid() {
+				newObj = objValue.Field(i)
+			}
+			s = schemaFromType(schemas, field.Type, newObj)
 		case timeKind:
-			schema := openapi3.NewSchema()
-			schema.Type = "string"
-			// https://tools.ietf.org/html/rfc3339#section-5.6
-			schema.Format = "date-time"
-			s = openapi3.NewSchemaRef("", schema)
+			s = openapi3.NewSchemaRef("", timeSchema())
 		default:
-			s = schemaFromType(schemas, field.Type, fieldObj.Interface())
+			if objValue.IsValid() {
+				switch objValue.Kind() {
+				// case reflect.Slice:
+				// 	s = schemaFromType(schemas, field.Type, obj)
+				case reflect.Struct:
+					newObj := obj
+					if objValue.IsValid() {
+						fieldObj := objValue.Field(i)
+						if fieldObj.IsValid() {
+							newObj = fieldObj.Interface()
+						}
+					}
+					s = schemaFromType(schemas, field.Type, newObj)
+				default:
+					s = schemaFromType(schemas, field.Type, obj)
+				}
+			}
 		}
 		for name, fn := range schemaFuncTags {
 			value, has := field.Tag.Lookup(name)
@@ -262,6 +297,35 @@ var schemaFuncTags = map[string]schemaTagFunc{
 	"pattern": func(value string, has bool, s *openapi3.Schema) error {
 		if has {
 			s.WithPattern(value)
+		}
+		return nil
+	},
+	// array
+	"minItems": func(value string, has bool, s *openapi3.Schema) error {
+		if has {
+			val, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return err
+			}
+			s.WithMinItems(val)
+		}
+		return nil
+	},
+	// array
+	"maxItems": func(value string, has bool, s *openapi3.Schema) error {
+		if has {
+			val, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return err
+			}
+			s.WithMaxItems(val)
+		}
+		return nil
+	},
+	// array
+	"uniqueItems": func(value string, has bool, s *openapi3.Schema) error {
+		if has {
+			s.WithUniqueItems(tagBoolValue(value))
 		}
 		return nil
 	},

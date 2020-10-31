@@ -42,8 +42,8 @@ func TestRouterSimpleRoutes(t *testing.T) {
         }
       },
       "info": {
-          "title": "",
-          "version": ""
+          "title": "Title",
+          "version": "0.0.1"
       },
       "openapi": "3.0.1",
       "paths": {
