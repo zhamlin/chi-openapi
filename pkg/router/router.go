@@ -188,3 +188,12 @@ func (r *Router) ServeSpec(path string) error {
 	})
 	return nil
 }
+
+// FilterRouter returns a router used for verifying middlewares
+func (r *Router) FilterRouter() (*openapi3filter.Router, error) {
+	router := openapi3filter.NewRouter()
+	if err := router.AddSwagger(r.swagger); err != nil {
+		return router, err
+	}
+	return router, nil
+}

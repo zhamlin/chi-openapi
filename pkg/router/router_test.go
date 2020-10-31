@@ -13,6 +13,8 @@ import (
 
 	. "chi-openapi/internal/testing"
 	. "chi-openapi/pkg/openapi/operations"
+
+	"github.com/go-chi/chi"
 )
 
 func dummyHandler(_ http.ResponseWriter, _ *http.Request) {}
@@ -96,8 +98,12 @@ func TestRouterVerifyRequestMiddleware(t *testing.T) {
 		JSONBody("required data", InputBody{}),
 		JSONResponse(http.StatusOK, "OK", Response{}),
 	})
+	filterRouter, err := dummyR.FilterRouter()
+	if err != nil {
+		t.Error(err)
+	}
 
-	r := NewRouter().With(VerifyRequest(dummyR))
+	r := NewRouter().With(VerifyRequest(filterRouter))
 	r.Get("/", dummyHandler, []Option{
 		JSONBody("required data", InputBody{}),
 		JSONResponse(200, "OK", Response{}),
@@ -179,18 +185,20 @@ func responseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestRouterVerifyResponse(t *testing.T) {
-	dummyR := NewRouter()
-	dummyR.Get("/", dummyHandler, []Option{
+	router := NewRouter()
+	router.Get("/", responseHandler, []Option{
+		JSONBody("required data", InputBody{}),
 		JSONResponse(http.StatusOK, "OK", Response{}),
 	})
 
+	filterRouter, err := router.FilterRouter()
+	if err != nil {
+		t.Error(err)
+	}
 	r := NewRouter().
-		With(JSONHeader).
-		With(VerifyResponse(dummyR))
-	r.Get("/", responseHandler, []Option{
-		JSONBody("required data", InputBody{}),
-		JSONResponse(200, "OK", Response{}),
-	})
+		With(VerifyResponse(filterRouter)).
+		With(JSONHeader)
+	r.Mount("/", router)
 
 	tests := []struct {
 		name   string
@@ -238,9 +246,24 @@ func BenchmarkRouter(b *testing.B) {
 	dummyR.Get("/", dummyHandler, []Option{
 		JSONResponse(http.StatusOK, "OK", Response{}),
 	})
+	filterRouter, err := dummyR.FilterRouter()
+	if err != nil {
+		b.Error(err)
+	}
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Add("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	b.Run("chi router", func(b *testing.B) {
+		r := chi.NewRouter().
+			With(JSONHeader)
+		r.Get("/", responseHandler)
+		b.ReportAllocs()
+		for n := 0; n < b.N; n++ {
+			r.ServeHTTP(w, req)
+		}
+	})
 
 	b.Run("no verify middleware", func(b *testing.B) {
 		r := NewRouter().
@@ -251,7 +274,6 @@ func BenchmarkRouter(b *testing.B) {
 		})
 		b.ReportAllocs()
 		for n := 0; n < b.N; n++ {
-			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 		}
 	})
@@ -259,14 +281,13 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify response", func(b *testing.B) {
 		r := NewRouter().
 			With(JSONHeader).
-			With(VerifyResponse(dummyR))
+			With(VerifyResponse(filterRouter))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
 		})
 		b.ReportAllocs()
 		for n := 0; n < b.N; n++ {
-			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 		}
 	})
@@ -284,7 +305,7 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify request", func(b *testing.B) {
 		r := NewRouter().
 			With(JSONHeader).
-			With(VerifyRequest(dummyR))
+			With(VerifyRequest(filterRouter))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
@@ -292,7 +313,6 @@ func BenchmarkRouter(b *testing.B) {
 
 		b.ReportAllocs()
 		for n := 0; n < b.N; n++ {
-			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 		}
 	})
@@ -300,8 +320,8 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify request and response", func(b *testing.B) {
 		r := NewRouter().
 			With(JSONHeader).
-			With(VerifyRequest(dummyR)).
-			With(VerifyResponse(dummyR))
+			With(VerifyRequest(filterRouter)).
+			With(VerifyResponse(filterRouter))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
@@ -309,7 +329,6 @@ func BenchmarkRouter(b *testing.B) {
 
 		b.ReportAllocs()
 		for n := 0; n < b.N; n++ {
-			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 		}
 	})
