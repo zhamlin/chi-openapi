@@ -1,10 +1,8 @@
 package router
 
 import (
-	"encoding/json"
 	"net/http"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi"
 )
@@ -67,27 +65,7 @@ func VerifyRequest(router *openapi3filter.Router, errFn ErrorHandler) func(http.
 			input.Route = route
 			err = openapi3filter.ValidateRequest(r.Context(), input)
 			if err != nil {
-				if re, ok := err.(*openapi3filter.RequestError); ok {
-					if se, ok := re.Err.(*openapi3.SchemaError); ok {
-						field := "unknown"
-						if p := se.JSONPointer(); len(p) > 0 {
-							field = p[0]
-						}
-						schemaError := ErrorResponse{Errors: Errors{Error{
-							Field:  field,
-							Reason: se.Reason,
-						}}}
-						b, err := json.Marshal(&schemaError)
-						if err != nil {
-							errFn(w, r, err)
-							return
-						}
-
-						w.Header().Add("Content-Type", "application/json")
-						w.WriteHeader(re.HTTPStatus())
-						w.Write(b)
-					}
-				}
+				errFn(w, r, err)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -146,13 +124,7 @@ func VerifyResponse(router *openapi3filter.Router, errFn ErrorHandler) func(http
 
 			err = openapi3filter.ValidateResponse(r.Context(), input)
 			if err != nil {
-				if re, ok := err.(*openapi3filter.ResponseError); ok {
-					w.WriteHeader(http.StatusInternalServerError)
-					// TODO: handle invalid content type
-					if _, ok := re.Err.(*openapi3.SchemaError); ok {
-						errFn(w, r, err)
-					}
-				}
+				errFn(w, r, err)
 				return
 			}
 			for name, value := range rw.Header() {

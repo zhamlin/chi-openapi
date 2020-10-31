@@ -210,3 +210,10 @@ func (r *Router) FilterRouter() (*openapi3filter.Router, error) {
 	}
 	return router, nil
 }
+
+// UseRouter copies over the routes and swagger info from the other router.
+func (r *Router) UseRouter(other *Router) *Router {
+	r.swagger.Info = other.swagger.Info
+	r.Mount("/", other)
+	return r
+}

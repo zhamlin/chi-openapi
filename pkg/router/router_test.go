@@ -14,6 +14,8 @@ import (
 	. "chi-openapi/internal/testing"
 	. "chi-openapi/pkg/openapi/operations"
 
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi"
 )
 
@@ -23,8 +25,14 @@ type tester interface {
 }
 
 func errorHandler(t tester) ErrorHandler {
-	return func(_ http.ResponseWriter, _ *http.Request, err error) {
-		t.Log(err)
+	return func(w http.ResponseWriter, _ *http.Request, err error) {
+		if re, ok := err.(*openapi3filter.RequestError); ok {
+			if _, ok := re.Err.(*openapi3.SchemaError); ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
 
