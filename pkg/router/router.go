@@ -10,6 +10,7 @@ import (
 	"chi-openapi/pkg/openapi/operations"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi"
 )
 
@@ -44,10 +45,12 @@ type Router struct {
 	prefixPath string
 }
 
+// Use appends one or more middlewares onto the Router stack.
 func (r *Router) Use(middlewares ...func(http.Handler) http.Handler) {
 	r.mux.Use(middlewares...)
 }
 
+// With adds inline middlewares for an endpoint handler.
 func (r *Router) With(middlewares ...func(http.Handler) http.Handler) *Router {
 	newRouter := NewRouter()
 	newRouter.swagger = r.swagger
@@ -56,17 +59,21 @@ func (r *Router) With(middlewares ...func(http.Handler) http.Handler) *Router {
 }
 
 // TODO: implement group function, regarding middlewares
+// Group adds a new inline-Router along the current routing
+// path, with a fresh middleware stack for the inline-Router.
 func (r *Router) Group(path, name, description string) {
 }
 
-func (router *Router) Route(path string, fn func(*Router)) {
+// Route mounts a sub-Router along a `pattern`` string.
+func (router *Router) Route(pattern string, fn func(*Router)) {
 	subRouter := NewRouter()
 	if fn != nil {
 		fn(subRouter)
 	}
-	router.Mount(path, subRouter)
+	router.Mount(pattern, subRouter)
 }
 
+// Mount attaches another http.Handler along ./pattern/*
 func (router *Router) Mount(path string, handler http.Handler) {
 	switch obj := handler.(type) {
 	case *Router:
@@ -84,6 +91,12 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	router.mux.ServeHTTP(w, r)
 }
 
+// Method adds routes for `pattern` that matches the `method` HTTP method.
+func (r *Router) Method(method, path string, handler http.Handler, options []operations.Option) {
+	r.MethodFunc(method, path, handler.ServeHTTP, options)
+}
+
+// MethodFunc adds routes for `pattern` that matches the `method` HTTP method.
 func (r *Router) MethodFunc(method, path string, handler http.HandlerFunc, options []operations.Option) {
 	o := operations.Operation{}
 	for _, option := range options {
