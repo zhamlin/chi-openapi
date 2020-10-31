@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -72,7 +73,8 @@ func TestRouterSimpleRoutes(t *testing.T) {
 }
 
 type InputBody struct {
-	Amount int `json:"amount" min:"3" max:"4"`
+	Amount int    `json:"amount" min:"3" max:"4"`
+	SSN    string `json:"string" pattern:"^\\d{3}-\\d{2}-\\d{4}$"`
 }
 
 func TestRouterVerifyMiddleware(t *testing.T) {
@@ -95,26 +97,44 @@ func TestRouterVerifyMiddleware(t *testing.T) {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
-		// respBody, _ := ioutil.ReadAll(resp.Body)
-		// t.Log(string(respBody))
 		resp := w.Result()
 		if expected := http.StatusBadRequest; resp.StatusCode != expected {
-			t.Errorf("Expected %v, got %v", expected, resp.StatusCode)
+			respBody, _ := ioutil.ReadAll(resp.Body)
+			t.Errorf("Expected %v, got %v:body:\n%v", expected, resp.StatusCode, string(respBody))
 		}
 	})
 
-	t.Run("valid", func(t *testing.T) {
-		body, _ := json.Marshal(InputBody{Amount: 3})
+	t.Run("invalid ssn", func(t *testing.T) {
+		body, _ := json.Marshal(InputBody{
+			Amount: 3,
+			SSN:    "123-45-689",
+		})
 		req := httptest.NewRequest("GET", "/", bytes.NewReader(body))
 		req.Header.Add("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
-		// respBody, _ := ioutil.ReadAll(resp.Body)
-		// t.Log(string(respBody))
+		resp := w.Result()
+		if expected := http.StatusBadRequest; resp.StatusCode != expected {
+			respBody, _ := ioutil.ReadAll(resp.Body)
+			t.Errorf("Expected %v, got %v:body:\n%v", expected, resp.StatusCode, string(respBody))
+		}
+	})
+
+	t.Run("valid", func(t *testing.T) {
+		body, _ := json.Marshal(InputBody{
+			Amount: 3,
+			SSN:    "123-45-6789",
+		})
+		req := httptest.NewRequest("GET", "/", bytes.NewReader(body))
+		req.Header.Add("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
 		resp := w.Result()
 		if expected := http.StatusOK; resp.StatusCode != expected {
-			t.Errorf("Expected %v, got %v", expected, resp.StatusCode)
+			respBody, _ := ioutil.ReadAll(resp.Body)
+			t.Errorf("Expected %v, got %v:body:\n%v", expected, resp.StatusCode, string(respBody))
 		}
 	})
 }
