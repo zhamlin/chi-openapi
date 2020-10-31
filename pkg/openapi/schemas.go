@@ -226,6 +226,17 @@ type schemaTagFunc func(string, bool, *openapi3.Schema) error
 
 var schemaFuncTags = map[string]schemaTagFunc{
 	// all
+	"readOnly": func(value string, has bool, s *openapi3.Schema) error {
+		if has {
+			s.ReadOnly = tagBoolValue(value)
+		}
+		return nil
+	},
+	// all
+	"writeOnly": func(value string, has bool, s *openapi3.Schema) error {
+		if has {
+			s.WriteOnly = tagBoolValue(value)
+		}
 		return nil
 	},
 	// all
