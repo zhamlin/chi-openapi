@@ -187,13 +187,9 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 				newObj = objValue.Field(i)
 			}
 			s = schemaFromType(schemas, field.Type, newObj)
-		case timeKind:
-			s = openapi3.NewSchemaRef("", timeSchema())
 		default:
 			if objValue.IsValid() {
 				switch objValue.Kind() {
-				// case reflect.Slice:
-				// 	s = schemaFromType(schemas, field.Type, obj)
 				case reflect.Struct:
 					newObj := obj
 					if objValue.IsValid() {
