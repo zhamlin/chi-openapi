@@ -207,8 +207,8 @@ func TestRouterVerifyResponse(t *testing.T) {
 		t.Error(err)
 	}
 	r := NewRouter().
-		With(VerifyResponse(filterRouter, errorHandler(t))).
-		With(JSONHeader)
+		With(JSONHeader).
+		With(VerifyResponse(filterRouter, errorHandler(t)))
 	r.Mount("/", router)
 
 	tests := []struct {

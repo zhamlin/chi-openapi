@@ -95,12 +95,6 @@ func VerifyRequest(router *openapi3filter.Router, errFn ErrorHandler) func(http.
 	}
 }
 
-func newResponseWriter() *responseWriter {
-	return &responseWriter{
-		headers: http.Header{},
-	}
-}
-
 type responseWriter struct {
 	body       []byte
 	statusCode int
@@ -133,7 +127,9 @@ func VerifyResponse(router *openapi3filter.Router, errFn ErrorHandler) func(http
 				return
 			}
 
-			rw := newResponseWriter()
+			rw := &responseWriter{
+				headers: w.Header(),
+			}
 			next.ServeHTTP(rw, r)
 
 			validationInput := requestValidationInput(r)
