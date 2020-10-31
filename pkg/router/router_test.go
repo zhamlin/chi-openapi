@@ -17,6 +17,17 @@ import (
 	"github.com/go-chi/chi"
 )
 
+type tester interface {
+	Error(args ...interface{})
+	Log(args ...interface{})
+}
+
+func errorHandler(t tester) ErrorHandler {
+	return func(_ http.ResponseWriter, _ *http.Request, err error) {
+		t.Log(err)
+	}
+}
+
 func dummyHandler(_ http.ResponseWriter, _ *http.Request) {}
 
 type Response struct {
@@ -103,7 +114,7 @@ func TestRouterVerifyRequestMiddleware(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := NewRouter().With(VerifyRequest(filterRouter))
+	r := NewRouter().With(VerifyRequest(filterRouter, errorHandler(t)))
 	r.Get("/", dummyHandler, []Option{
 		JSONBody("required data", InputBody{}),
 		JSONResponse(200, "OK", Response{}),
@@ -196,7 +207,7 @@ func TestRouterVerifyResponse(t *testing.T) {
 		t.Error(err)
 	}
 	r := NewRouter().
-		With(VerifyResponse(filterRouter)).
+		With(VerifyResponse(filterRouter, errorHandler(t))).
 		With(JSONHeader)
 	r.Mount("/", router)
 
@@ -281,7 +292,7 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify response", func(b *testing.B) {
 		r := NewRouter().
 			With(JSONHeader).
-			With(VerifyResponse(filterRouter))
+			With(VerifyResponse(filterRouter, errorHandler(b)))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
@@ -305,7 +316,7 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify request", func(b *testing.B) {
 		r := NewRouter().
 			With(JSONHeader).
-			With(VerifyRequest(filterRouter))
+			With(VerifyRequest(filterRouter, errorHandler(b)))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
@@ -320,8 +331,8 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify request and response", func(b *testing.B) {
 		r := NewRouter().
 			With(JSONHeader).
-			With(VerifyRequest(filterRouter)).
-			With(VerifyResponse(filterRouter))
+			With(VerifyRequest(filterRouter, errorHandler(b))).
+			With(VerifyResponse(filterRouter, errorHandler(b)))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),

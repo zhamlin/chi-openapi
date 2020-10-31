@@ -2,7 +2,6 @@ package router
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -52,13 +51,15 @@ func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationIn
 	}
 }
 
+type ErrorHandler func(http.ResponseWriter, *http.Request, error)
+
 // VerifyRequest validates requests against matching openapi routes on the router
-func VerifyRequest(router *openapi3filter.Router) func(http.Handler) http.Handler {
+func VerifyRequest(router *openapi3filter.Router, errFn ErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			route, _, err := router.FindRoute(r.Method, r.URL)
 			if err != nil {
-				fmt.Printf("%+v\n", err)
+				errFn(w, r, err)
 				return
 			}
 
@@ -78,8 +79,8 @@ func VerifyRequest(router *openapi3filter.Router) func(http.Handler) http.Handle
 						}}}
 						b, err := json.Marshal(&schemaError)
 						if err != nil {
-							// TODO: log this?
-							panic(err)
+							errFn(w, r, err)
+							return
 						}
 
 						w.Header().Add("Content-Type", "application/json")
@@ -123,12 +124,12 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 }
 
 // VerifyResponse validates response against matching openapi routes on the router
-func VerifyResponse(router *openapi3filter.Router) func(http.Handler) http.Handler {
+func VerifyResponse(router *openapi3filter.Router, errFn ErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			route, _, err := router.FindRoute(r.Method, r.URL)
 			if err != nil {
-				fmt.Printf("%+v\n", err)
+				errFn(w, r, err)
 				return
 			}
 
@@ -153,7 +154,7 @@ func VerifyResponse(router *openapi3filter.Router) func(http.Handler) http.Handl
 					w.WriteHeader(http.StatusInternalServerError)
 					// TODO: handle invalid content type
 					if _, ok := re.Err.(*openapi3.SchemaError); ok {
-						// TODO: log this
+						errFn(w, r, err)
 					}
 				}
 				return
