@@ -158,6 +158,7 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 	if obj != nil {
 		objValue = reflect.ValueOf(obj)
 	}
+	requiredFields := []string{}
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		// fieldObj := objValue.Field(i).Elem().Type()
@@ -169,6 +170,12 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 				continue
 			}
 			name = val
+		}
+
+		if val, ok := field.Tag.Lookup("required"); ok {
+			if tagBoolValue(val) {
+				requiredFields = append(requiredFields, name)
+			}
 		}
 
 		s := &openapi3.SchemaRef{}
@@ -209,8 +216,9 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 			}
 		}
 		schema.Properties[name] = s
-
 	}
+
+	schema.Required = requiredFields
 	return schema
 }
 
@@ -218,7 +226,6 @@ type schemaTagFunc func(string, bool, *openapi3.Schema) error
 
 var schemaFuncTags = map[string]schemaTagFunc{
 	// all
-	"required": func(value string, has bool, s *openapi3.Schema) error {
 		return nil
 	},
 	// all

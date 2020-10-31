@@ -94,6 +94,24 @@ func TestSchema(t *testing.T) {
             }
         `},
 		{
+			name: "required struct fields",
+			obj: struct {
+				Required bool `json:"required" required:"true"`
+			}{},
+			expected: `
+            {
+              "properties": {
+                "required": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "required"
+              ],
+              "type": "object"
+            }
+        `},
+		{
 			name: "minmax",
 			obj:  ref1{},
 			expected: `
