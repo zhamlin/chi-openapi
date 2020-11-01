@@ -11,7 +11,7 @@ type definedStruct struct {
 	Random int
 }
 
-func Test_Params(t *testing.T) {
+func TestParams(t *testing.T) {
 	tests := []struct {
 		name     string
 		expected string
@@ -65,12 +65,31 @@ func Test_Params(t *testing.T) {
               }
             ]
         `},
+		{
+			name: "min int query param",
+			obj: struct {
+				Int int `query:"int" min:"1"`
+			}{},
+			expected: `
+            [
+              {
+                "in": "query",
+                "name": "int",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            ]
+        `},
 	}
 	for _, test := range tests {
-		params := openapi.ParamsFromObj(test.obj)
-		if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
-			t.Errorf("test '%v': %v", test.name, err)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			params := openapi.ParamsFromObj(test.obj)
+			if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
+				t.Error(err)
+			}
+		})
+
 	}
 
 }

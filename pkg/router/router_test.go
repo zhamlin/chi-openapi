@@ -111,22 +111,26 @@ type InputBody struct {
 	SSN    string `json:"string" pattern:"^\\d{3}-\\d{2}-\\d{4}$"`
 }
 
+type TestParams struct {
+	Filter int `query:"filter" min:"3"`
+}
+
 func TestRouterVerifyRequestMiddleware(t *testing.T) {
 	dummyR := NewRouter()
 	dummyR.Get("/", dummyHandler, []Option{
+		Params(TestParams{}),
 		JSONBody("required data", InputBody{}),
 		JSONResponse(http.StatusOK, "OK", Response{}),
 	})
 	filterRouter, err := dummyR.FilterRouter()
 	if err != nil {
 		t.Error(err)
+		t.Fail()
 	}
 
-	r := NewRouter().With(VerifyRequest(filterRouter, errorHandler(t)))
-	r.Get("/", dummyHandler, []Option{
-		JSONBody("required data", InputBody{}),
-		JSONResponse(200, "OK", Response{}),
-	})
+	r := NewRouter().
+		With(VerifyRequest(filterRouter, errorHandler(t)))
+	r.UseRouter(dummyR)
 
 	tests := []struct {
 		name   string
@@ -160,6 +164,36 @@ func TestRouterVerifyRequestMiddleware(t *testing.T) {
 			},
 			method: "GET",
 			route:  "/",
+			status: http.StatusOK,
+		},
+		{
+			name: "valid",
+			body: InputBody{
+				Amount: 3,
+				SSN:    "123-45-6789",
+			},
+			method: "GET",
+			route:  "/",
+			status: http.StatusOK,
+		},
+		{
+			name: "invalid query param",
+			body: InputBody{
+				Amount: 3,
+				SSN:    "123-45-6789",
+			},
+			method: "GET",
+			route:  "/?filter=1",
+			status: http.StatusBadRequest,
+		},
+		{
+			name: "valid query param",
+			body: InputBody{
+				Amount: 3,
+				SSN:    "123-45-6789",
+			},
+			method: "GET",
+			route:  "/?filter=3",
 			status: http.StatusOK,
 		},
 	}

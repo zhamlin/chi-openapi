@@ -57,21 +57,17 @@ var paramFuncTags = map[string]paramTagFunc{
 		return p, nil
 	},
 	"format": func(value string, has bool, p Parameter) (Parameter, error) {
-		// TODO: allow this to be overriden by structs
 		if has {
-			// TODO(zhamlin): make sure format is a valid type
 			p.Schema.Value.Format = value
 		}
 		return p, nil
 	},
 	"minItems": func(value string, has bool, p Parameter) (Parameter, error) {
-		// TODO: allow this to be overriden by structs
 		if has {
 			minItems, err := strconv.ParseUint(value, 0, 64)
 			if err != nil {
 				return p, err
 			}
-			// TODO(zhamlin): make sure format is a valid type
 			p.Schema.Value.MinItems = minItems
 		}
 		return p, nil
@@ -100,6 +96,14 @@ var paramFuncTags = map[string]paramTagFunc{
 		}
 		return p, nil
 	},
+	// number
+	"min": func(value string, has bool, p Parameter) (Parameter, error) {
+		if has {
+			err := schemaFuncTags["min"](value, has, p.Schema.Value)
+			return p, err
+		}
+		return p, nil
+	},
 }
 
 func getParamaterOptions(tag reflect.StructTag) Parameter {
@@ -117,6 +121,22 @@ func getParamaterOptions(tag reflect.StructTag) Parameter {
 func getParamSchemaFromField(field reflect.StructField) *openapi3.Schema {
 	schema := openapi3.NewSchema()
 	switch field.Type.Kind() {
+	case reflect.Interface:
+		schema.Type = "object"
+	case reflect.Float32:
+		schema.Format = "float"
+		schema.Type = "number"
+	case reflect.Float64:
+		schema.Format = "float"
+		schema.Type = "number"
+	case reflect.Int:
+		schema.Type = "integer"
+	case reflect.Int32:
+		schema.Format = "int32"
+		schema.Type = "integer"
+	case reflect.Int64:
+		schema.Format = "int64"
+		schema.Type = "integer"
 	case reflect.String:
 		schema.Type = "string"
 	case reflect.Bool:
@@ -130,14 +150,7 @@ func getParamSchemaFromField(field reflect.StructField) *openapi3.Schema {
 		// TODO: replace with func to lookup this from a switch statement
 		schema.Items.Value.Type = field.Type.Elem().Kind().String()
 	case reflect.Struct:
-		// check for content type tag
-		schema.Type = "object"
-		schema.Items = &openapi3.SchemaRef{
-			Value: getSchemaFromStruct(Schemas{}, field.Type, nil),
-		}
-	default:
-		// TODO: zhamlin handle embeded via allOf?
-		// fmt.Printf("OTHER: %+v\n", field.Type.Kind())
+		// TODO: not currently supported
 	}
 	return schema
 }

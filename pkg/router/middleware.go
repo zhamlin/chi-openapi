@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi"
 )
@@ -38,11 +39,20 @@ func pathParams(r *http.Request) map[string]string {
 	return pathParams
 }
 
+// queryParamLoader handles loading booleans, basic strings and numbers
+func queryParamLoader(param *openapi3.Parameter, values []string) (interface{}, *openapi3.Schema, error) {
+	v := param.Schema.Value
+	var err error
+	var value interface{}
+	return value, v, err
+}
+
 func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationInput {
 	return &openapi3filter.RequestValidationInput{
 		Request:     r,
 		QueryParams: r.URL.Query(),
-		PathParams:  pathParams(r),
+		// ParamDecoder: queryParamLoader,
+		PathParams: pathParams(r),
 		Options: &openapi3filter.Options{
 			IncludeResponseStatus: true,
 		},

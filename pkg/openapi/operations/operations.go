@@ -39,7 +39,6 @@ func JSONBody(description string, model interface{}) Option {
 }
 
 func Params(model interface{}) Option {
-	// check for required, min, max, etc
 	return func(s *openapi3.Swagger, o Operation) Operation {
 		o.Parameters = openapi.ParamsFromObj(model)
 		return o
