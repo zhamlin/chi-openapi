@@ -23,10 +23,11 @@ func NewRouter() *Router {
 				Version: "0.0.1",
 				Title:   "Title",
 			},
-			OpenAPI: "3.0.1",
+			OpenAPI: "3.0.0",
 			Paths:   openapi3.Paths{},
 			Components: openapi3.Components{
-				Schemas: map[string]*openapi3.SchemaRef{},
+				Schemas:    openapi.Schemas{},
+				Parameters: openapi.Parameters{},
 			},
 		},
 	}
@@ -61,8 +62,8 @@ func (r *Router) With(middlewares ...func(http.Handler) http.Handler) *Router {
 // TODO: implement group function, regarding middlewares
 // Group adds a new inline-Router along the current routing
 // path, with a fresh middleware stack for the inline-Router.
-func (r *Router) Group(path, name, description string) {
-}
+// func (r *Router) Group(path, name, description string) {
+// }
 
 // Route mounts a sub-Router along a `pattern`` string.
 func (router *Router) Route(pattern string, fn func(*Router)) {

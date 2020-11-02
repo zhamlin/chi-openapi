@@ -21,6 +21,8 @@ type Parameter struct {
 	openapi3.Parameter
 }
 
+type Parameters map[string]*openapi3.ParameterRef
+
 var paramTags = []string{"path", "query", "header"}
 
 // getParamaterType will set the correct "in" value from the tag

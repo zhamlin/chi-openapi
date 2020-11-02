@@ -19,14 +19,6 @@ type ErrorResponse struct {
 	Errors Errors `json:"errors"`
 }
 
-// JSONHeader sets the content type to application/json
-func JSONHeader(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		next.ServeHTTP(w, r)
-	})
-}
-
 // pathParams returns all chi url params from the request
 func pathParams(r *http.Request) map[string]string {
 	rCtx := chi.RouteContext(r.Context())
