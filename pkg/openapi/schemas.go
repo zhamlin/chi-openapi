@@ -206,6 +206,9 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 		}
 		for name, fn := range schemaFuncTags {
 			value, has := field.Tag.Lookup(name)
+			if s.Value == nil {
+				continue
+			}
 			if err := fn(value, has, s.Value); err != nil {
 				// TODO: remove
 				panic(err)
