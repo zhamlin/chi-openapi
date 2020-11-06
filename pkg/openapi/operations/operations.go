@@ -27,7 +27,7 @@ func JSONBody(description string, model interface{}) Option {
 		if s.Components.Schemas == nil {
 			s.Components.Schemas = openapi.Schemas{}
 		}
-		schema := openapi.SchemaFromObj(s.Components.Schemas, model)
+		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
 		o.RequestBody = &openapi3.RequestBodyRef{
 			Value: &openapi3.RequestBody{
 				Content:     openapi3.NewContentWithJSONSchemaRef(schema),
@@ -58,7 +58,7 @@ func JSONResponse(code int, description string, model interface{}) Option {
 			o.Responses[fmt.Sprintf("%d", code)] = response
 			return o
 		}
-		schema := openapi.SchemaFromObj(s.Components.Schemas, model)
+		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
 		// TODO: check for content first before just overwriting it
 		// "application/json": NewMediaType().WithSchema(schema),
 		response := &openapi3.ResponseRef{

@@ -114,9 +114,9 @@ func ParamsFromObj(obj interface{}) openapi3.Parameters {
 			fieldValue = objValue.Field(i)
 		}
 		if fieldValue.IsValid() {
-			param.Schema = schemaFromType(nil, field.Type, fieldValue)
+			param.Schema = schemaFromType(field.Type, fieldValue, nil)
 		} else {
-			param.Schema = schemaFromType(nil, field.Type, nil)
+			param.Schema = schemaFromType(field.Type, nil, nil)
 		}
 
 		// load schema tags

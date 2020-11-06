@@ -32,9 +32,9 @@ func (s Schemas) Inject(schema *openapi3.SchemaRef) *openapi3.SchemaRef {
 
 // SchemaFromObj returns an openapi3 schema for the object.
 // For paramters, use ParamsFromObj.
-func SchemaFromObj(schemas Schemas, obj interface{}) *openapi3.SchemaRef {
+func SchemaFromObj(obj interface{}, schemas Schemas) *openapi3.SchemaRef {
 	typ := reflect.TypeOf(obj)
-	return schemaFromType(schemas, typ, obj)
+	return schemaFromType(typ, obj, schemas)
 }
 
 // SchemaID is used to override the name of the schema type
@@ -74,7 +74,7 @@ func timeSchema() *openapi3.Schema {
 	return schema
 }
 
-func schemaFromType(schemas Schemas, typ reflect.Type, obj interface{}) *openapi3.SchemaRef {
+func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi3.SchemaRef {
 	schema := openapi3.NewSchema()
 	name := getSchemaTypeName(typ)
 
@@ -97,7 +97,7 @@ func schemaFromType(schemas Schemas, typ reflect.Type, obj interface{}) *openapi
 	case reflect.Interface:
 		if obj != nil {
 			typ := reflect.ValueOf(obj).Type()
-			return schemaFromType(schemas, typ, obj)
+			return schemaFromType(typ, obj, schemas)
 		}
 		schema.Type = "object"
 	case reflect.String:
@@ -124,7 +124,7 @@ func schemaFromType(schemas Schemas, typ reflect.Type, obj interface{}) *openapi
 		fallthrough
 	case reflect.Slice:
 		schema.Type = "array"
-		schema.Items = schemaFromType(schemas, typ.Elem(), obj)
+		schema.Items = schemaFromType(typ.Elem(), obj, schemas)
 	case reflect.Struct:
 		// handle special structs
 		inline := false
@@ -186,7 +186,7 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 			if objValue.IsValid() {
 				newObj = objValue.Field(i)
 			}
-			s = schemaFromType(schemas, field.Type, newObj)
+			s = schemaFromType(field.Type, newObj, schemas)
 		default:
 			if objValue.IsValid() {
 				switch objValue.Kind() {
@@ -198,9 +198,9 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 							newObj = fieldObj.Interface()
 						}
 					}
-					s = schemaFromType(schemas, field.Type, newObj)
+					s = schemaFromType(field.Type, newObj, schemas)
 				default:
-					s = schemaFromType(schemas, field.Type, obj)
+					s = schemaFromType(field.Type, obj, schemas)
 				}
 			}
 		}

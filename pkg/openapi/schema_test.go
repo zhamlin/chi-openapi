@@ -150,7 +150,7 @@ func TestSchema(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(schemas, test.obj)
+			schema := openapi.SchemaFromObj(test.obj, schemas)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -257,7 +257,7 @@ func TestSchemaNumberFormats(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(schemas, test.obj)
+			schema := openapi.SchemaFromObj(test.obj, schemas)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -381,7 +381,7 @@ func TestSchemaStringFormats(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(schemas, test.obj)
+			schema := openapi.SchemaFromObj(test.obj, schemas)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -489,7 +489,7 @@ func TestSchemaArrays(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(schemas, test.obj)
+			schema := openapi.SchemaFromObj(test.obj, schemas)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
