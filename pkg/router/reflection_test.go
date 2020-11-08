@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,7 @@ import (
 )
 
 type reflectInput struct {
-	Name string `json:"name"`
+	Value string `json:"name"`
 }
 type reflectParmas struct {
 	Int int `query:"int" required:"true"`
@@ -35,10 +36,21 @@ func reflectionHandlerParams(w http.ResponseWriter, params reflectParmas) {
 func reflectionHandlerBody(w http.ResponseWriter, body reflectInput) {
 	response := Response{
 		Int:    3,
-		String: body.Name,
+		String: body.Value,
 	}
 	b, _ := json.Marshal(&response)
 	w.Write(b)
+}
+
+func reflectionHandlerReturnErr(body reflectInput) error {
+	return fmt.Errorf("error " + body.Value)
+}
+
+func reflectionHandlerReturnMultiple(ctx context.Context, params reflectParmas) (Response, error) {
+	if params.Int < 0 {
+		return Response{}, fmt.Errorf("")
+	}
+	return Response{}, nil
 }
 
 func reflectionHandlerBackward(ctx context.Context, w http.ResponseWriter) {
@@ -60,6 +72,8 @@ func errHandler(t tester) HandleFns {
 	}
 }
 
+// TODO: test params
+
 func TestReflectionFuncSimple(t *testing.T) {
 	handler, err := HandlerFromFnDefault(reflectionHandlerBackward, errHandler(t), openapi.NewComponents())
 	if err != nil {
@@ -75,15 +89,76 @@ func TestReflectionFuncSimple(t *testing.T) {
 	t.Log("body", string(b))
 }
 
+func TestReflectionFuncReturns(t *testing.T) {
+	components := openapi.NewComponents()
+	for n := range components.Parameters {
+		fmt.Printf("!!! %+v\n", n)
+	}
+	openapi.SchemaFromObj(reflectInput{}, components.Schemas)
+
+	t.Run("error only return", func(t *testing.T) {
+		input := reflectInput{Value: "name"}
+		handler, err := HandlerFromFnDefault(reflectionHandlerReturnErr, HandleFns{
+			ErrFn: func(_ http.ResponseWriter, err error) {
+				if err.Error() != "error "+input.Value {
+					t.Errorf("expected: 'error %s', got: %v", input.Value, err)
+				}
+			},
+		}, components)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		data, err := json.Marshal(&input)
+		if err != nil {
+			t.Error(err)
+		}
+
+		req := httptest.NewRequest("GET", "/", bytes.NewReader(data))
+		req.Header.Add("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handler(w, req)
+	})
+
+	t.Run("multiple return", func(t *testing.T) {
+		input := reflectInput{Value: "name"}
+		handler, err := HandlerFromFnDefault(reflectionHandlerReturnMultiple, HandleFns{
+			ErrFn: func(_ http.ResponseWriter, err error) {
+				if err.Error() != "error "+input.Value {
+					t.Errorf("expected: 'error %s', got: %v", input.Value, err)
+				}
+			},
+			SuccessFn: func(_ http.ResponseWriter, obj interface{}) {
+			},
+		}, components)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		data, err := json.Marshal(&input)
+		if err != nil {
+			t.Error(err)
+		}
+
+		req := httptest.NewRequest("GET", "/", bytes.NewReader(data))
+		req.Header.Add("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handler(w, req)
+	})
+}
+
+// TODO: test request body
 func TestReflectionFuncBody(t *testing.T) {
 	components := openapi.NewComponents()
-	openapi.SchemaFromObj(components.Schemas, reflectInput{})
+	openapi.SchemaFromObj(reflectInput{}, components.Schemas)
 	handler, err := HandlerFromFnDefault(reflectionHandlerBody, errHandler(t), components)
 	if err != nil {
 		t.Error(err)
 	}
 
-	input := reflectInput{Name: "o"}
+	input := reflectInput{Value: "name"}
 	// input := struct {
 	// 	Int    int    `json:"int"`
 	// 	String string `json:"string"`
@@ -157,7 +232,7 @@ func BenchmarkReflection(b *testing.B) {
 	req.Header.Add("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	input := reflectInput{Name: "o"}
+	input := reflectInput{Value: "o"}
 	data, err := json.Marshal(&input)
 	if err != nil {
 		b.Error(err)
@@ -166,7 +241,7 @@ func BenchmarkReflection(b *testing.B) {
 	req.Header.Add("Content-Type", "application/json")
 
 	components := openapi.NewComponents()
-	openapi.SchemaFromObj(components.Schemas, reflectInput{})
+	openapi.SchemaFromObj(reflectInput{}, components.Schemas)
 	handler, err := HandlerFromFnDefault(reflectionHandlerBody, errHandler(b), components)
 	if err != nil {
 		b.Error(err)

@@ -11,10 +11,12 @@ import (
 	"chi-openapi/pkg/openapi"
 )
 
-var responseWriterType = reflect.TypeOf((*http.ResponseWriter)(nil)).Elem()
-var requestType = reflect.TypeOf(&http.Request{})
-var ctxType = reflect.TypeOf((*context.Context)(nil)).Elem()
-var errType = reflect.TypeOf((*error)(nil)).Elem()
+var (
+	responseWriterType = reflect.TypeOf((*http.ResponseWriter)(nil)).Elem()
+	requestPtrType     = reflect.TypeOf(&http.Request{})
+	ctxType            = reflect.TypeOf((*context.Context)(nil)).Elem()
+	errType            = reflect.TypeOf((*error)(nil)).Elem()
+)
 
 type ArgCreator func(http.ResponseWriter, *http.Request) (reflect.Value, error)
 type ArgCreators map[reflect.Type]ArgCreator
@@ -26,7 +28,7 @@ var DefaultArgCreators = ArgCreators{
 	responseWriterType: func(w http.ResponseWriter, _ *http.Request) (reflect.Value, error) {
 		return reflect.ValueOf(w), nil
 	},
-	requestType: func(_ http.ResponseWriter, r *http.Request) (reflect.Value, error) {
+	requestPtrType: func(_ http.ResponseWriter, r *http.Request) (reflect.Value, error) {
 		return reflect.ValueOf(r), nil
 	},
 }
@@ -46,6 +48,19 @@ func (h HandleFns) Success(w http.ResponseWriter, obj interface{}) {
 	if h.SuccessFn != nil {
 		h.SuccessFn(w, obj)
 	}
+}
+
+type argType string
+
+var (
+	argTypeParam    argType = "param"
+	argTypeJSONBody argType = "json_body"
+	argTypeOther    argType = "other"
+)
+
+type handlerArgType struct {
+	ReflectType reflect.Type
+	Type        argType
 }
 
 // HandlerFromFn takes in any function matching the following criteria:
@@ -75,14 +90,14 @@ func HandlerFromFn(fnPtr interface{}, fns HandleFns, components openapi.Componen
 		return nil, fmt.Errorf("expected a function to HandlerFromFn, got: %+v", k)
 	}
 
-	args := []reflect.Type{}
+	args := []handlerArgType{}
 	hasJSONBody := false
 
 	// find all arguments
 	for i := 0; i < typ.NumIn(); i++ {
 		arg := typ.In(i)
 		if _, has := creators[arg]; has {
-			args = append(args, arg)
+			args = append(args, handlerArgType{arg, argTypeOther})
 			continue
 		}
 		if components.Schemas != nil {
@@ -91,18 +106,21 @@ func HandlerFromFn(fnPtr interface{}, fns HandleFns, components openapi.Componen
 				return nil, fmt.Errorf("multiple json body values per handler not allowed")
 			}
 			if has {
-				args = append(args, arg)
+				args = append(args, handlerArgType{arg, argTypeJSONBody})
 				hasJSONBody = true
 				continue
 			}
+		}
+		if arg.Kind() != reflect.Struct {
 			return nil, fmt.Errorf("no way of creating type: %+v", arg)
 		}
-		// TODO: support params
+		args = append(args, handlerArgType{arg, argTypeParam})
 	}
 
 	// verify correct return
 	returnCount := typ.NumOut()
 	returnTypes := []reflect.Type{}
+	returnHandlerFn := func(http.ResponseWriter, *http.Request, []reflect.Value) {}
 	if returnCount > 0 {
 		if returnCount > 2 {
 			return nil, fmt.Errorf("expected at most 2 returns, got: %v", returnCount)
@@ -115,61 +133,74 @@ func HandlerFromFn(fnPtr interface{}, fns HandleFns, components openapi.Componen
 		if lastError := returnTypes[len(returnTypes)-1]; lastError != errType {
 			return nil, fmt.Errorf("expected the last return type to be an error, got: %+v", lastError)
 		}
+
+		getErr := func(values []reflect.Value, i int) error {
+			e, ok := values[i].Interface().(error)
+			if ok {
+				return e
+			}
+			return nil
+		}
+
+		switch returnCount {
+		case 1:
+			returnHandlerFn = func(w http.ResponseWriter, r *http.Request, values []reflect.Value) {
+				if err := getErr(values, 0); err != nil {
+					fns.Error(w, err)
+					return
+				}
+			}
+		case 2:
+			returnHandlerFn = func(w http.ResponseWriter, r *http.Request, values []reflect.Value) {
+				if err := getErr(values, 1); err != nil {
+					fns.Error(w, err)
+					return
+				} else {
+					fns.Success(w, values[0].Interface())
+				}
+			}
+
+		}
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		localArgs := []reflect.Value{}
 		for _, arg := range args {
-			if handler, has := creators[arg]; has {
-				value, err := handler(w, r)
-				if err != nil {
-					fns.Error(w, err)
-					return
+			switch arg.Type {
+			case argTypeOther:
+				if argCreator, has := creators[arg.ReflectType]; has {
+					value, err := argCreator(w, r)
+					if err != nil {
+						fns.Error(w, err)
+						return
+					}
+					localArgs = append(localArgs, value)
 				}
-				localArgs = append(localArgs, value)
-				continue
-			}
-			if _, has := components.Schemas[arg.Name()]; has {
-				// only support loading json bodies
-				argObj := reflect.New(arg)
-				b, err := ioutil.ReadAll(r.Body)
-				if err != nil {
-					fns.Error(w, err)
-					return
+			case argTypeParam:
+				localArgs = append(localArgs, reflect.New(arg.ReflectType).Elem())
+			case argTypeJSONBody:
+				if _, has := components.Schemas[arg.ReflectType.Name()]; has {
+					// TODO: support data wrapper types
+					// probably need to look for any refs, and load appropriately
+
+					// only support loading json bodies
+					argObj := reflect.New(arg.ReflectType)
+					b, err := ioutil.ReadAll(r.Body)
+					if err != nil {
+						fns.Error(w, err)
+						return
+					}
+					if err := json.Unmarshal(b, argObj.Interface()); err != nil {
+						fns.Error(w, err)
+						return
+					}
+					localArgs = append(localArgs, argObj.Elem())
 				}
-				if err := json.Unmarshal(b, argObj.Interface()); err != nil {
-					fns.Error(w, err)
-					return
-				}
-				localArgs = append(localArgs, argObj.Elem())
-				continue
 			}
 
 		}
 		returns := val.Call(localArgs)
-		if l := len(returns); l > 0 {
-			getErr := func(i int) error {
-				e, ok := returns[i].Interface().(error)
-				if ok {
-					return e
-				}
-				return nil
-			}
-			switch l {
-			case 1:
-				if err := getErr(0); err != nil {
-					fns.Error(w, err)
-					return
-				}
-			case 2:
-				if err := getErr(1); err != nil {
-					fns.Error(w, err)
-					return
-				} else {
-					fns.Success(w, returns[0].Interface())
-				}
-			}
-		}
+		returnHandlerFn(w, r, returns)
 	}, nil
 }
 
