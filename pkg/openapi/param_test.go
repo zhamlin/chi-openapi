@@ -44,7 +44,7 @@ func TestParams(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params := openapi.ParamsFromObj(test.obj)
+			params := openapi.ParamsFromObj(test.obj, nil)
 			if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
 				t.Error(err)
 			}
@@ -128,7 +128,7 @@ func TestParamsLocation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params := openapi.ParamsFromObj(test.obj)
+			params := openapi.ParamsFromObj(test.obj, nil)
 			if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
 				t.Error(err)
 			}
@@ -230,7 +230,7 @@ func TestParamsSpecificSettings(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params := openapi.ParamsFromObj(test.obj)
+			params := openapi.ParamsFromObj(test.obj, nil)
 			if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
 				t.Error(err)
 			}

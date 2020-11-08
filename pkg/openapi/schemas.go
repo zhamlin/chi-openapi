@@ -50,7 +50,7 @@ type SchemaInline interface {
 
 const componentSchemasPath = "#/components/schemas/"
 
-func getSchemaTypeName(typ reflect.Type) string {
+func getTypeName(typ reflect.Type) string {
 	// check to see if the name is set via the SchemaID method
 	name := typ.Name()
 	schemaInterface := reflect.TypeOf((*SchemaID)(nil)).Elem()
@@ -76,7 +76,7 @@ func timeSchema() *openapi3.Schema {
 
 func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi3.SchemaRef {
 	schema := openapi3.NewSchema()
-	name := getSchemaTypeName(typ)
+	name := getTypeName(typ)
 
 	if schemas != nil {
 		// if we've already loaded this type, return a reference
@@ -188,21 +188,17 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 			}
 			s = schemaFromType(field.Type, newObj, schemas)
 		default:
-			if objValue.IsValid() {
-				switch objValue.Kind() {
-				case reflect.Struct:
-					newObj := obj
-					if objValue.IsValid() {
-						fieldObj := objValue.Field(i)
-						if fieldObj.IsValid() {
-							newObj = fieldObj.Interface()
-						}
+			if objValue.IsValid() && objValue.Kind() == reflect.Struct {
+				newObj := obj
+				if objValue.IsValid() {
+					fieldObj := objValue.Field(i)
+					if fieldObj.IsValid() {
+						newObj = fieldObj.Interface()
 					}
-					s = schemaFromType(field.Type, newObj, schemas)
-				default:
-					s = schemaFromType(field.Type, obj, schemas)
 				}
+				s = schemaFromType(field.Type, newObj, schemas)
 			}
+			s = schemaFromType(field.Type, obj, schemas)
 		}
 		for name, fn := range schemaFuncTags {
 			value, has := field.Tag.Lookup(name)
