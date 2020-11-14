@@ -12,6 +12,7 @@ import (
 
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/openapi/operations"
+	"chi-openapi/pkg/router"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -42,6 +43,8 @@ type RequestHandler interface {
 	Error(w http.ResponseWriter, r *http.Request, err error)
 	Success(w http.ResponseWriter, obj interface{})
 }
+
+type ErrorHandler func(http.ResponseWriter, *http.Request, error)
 
 type RequestHandleFns struct {
 	ErrFn     ErrorHandler
@@ -209,7 +212,7 @@ func HandlerFromFn(fnPtr interface{}, fns RequestHandler, components openapi.Com
 					return
 				}
 				obj := reflect.New(arg.ReflectType).Elem()
-				input, err := InputFromCTX(r.Context())
+				input, err := router.InputFromCTX(r.Context())
 				if err != nil {
 					fns.Error(w, r, err)
 					return
@@ -245,7 +248,7 @@ func HandlerFromFn(fnPtr interface{}, fns RequestHandler, components openapi.Com
 				if err := json.Unmarshal(b, argObj.Interface()); err != nil {
 					var jsonErr *json.SyntaxError
 					if errors.As(err, &jsonErr) {
-						input, err := InputFromCTX(r.Context())
+						input, err := router.InputFromCTX(r.Context())
 						if err != nil {
 							fns.Error(w, r, err)
 							return
@@ -293,14 +296,14 @@ func HandlerFromFnDefault(fnPtr interface{}, fns RequestHandleFns, components op
 }
 
 type ReflectRouter struct {
-	*Router
+	*router.Router
 	handleFns RequestHandleFns
 }
 
 // NewReflectRouter returns a wrapped chi router
 func NewReflectRouter(handleFns RequestHandleFns) *ReflectRouter {
 	return &ReflectRouter{
-		NewRouter(),
+		router.NewRouter(),
 		handleFns,
 	}
 }
@@ -308,7 +311,7 @@ func NewReflectRouter(handleFns RequestHandleFns) *ReflectRouter {
 func NewReflectRouterWithInfo(info openapi.Info, handleFns RequestHandleFns) *ReflectRouter {
 	r := NewReflectRouter(handleFns)
 	apiInfo := openapi3.Info(info)
-	r.swagger.Info = &apiInfo
+	r.Swagger.Info = &apiInfo
 	return r
 }
 
@@ -325,14 +328,12 @@ func (router *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
 func (router *ReflectRouter) Mount(path string, handler http.Handler) {
 	switch obj := handler.(type) {
 	case *ReflectRouter:
-		for name, item := range obj.swagger.Paths {
-			router.swagger.Paths[path+strings.TrimRight(name, "/")] = item
+		for name, item := range obj.Swagger.Paths {
+			router.Swagger.Paths[path+strings.TrimRight(name, "/")] = item
 		}
-		for name, item := range obj.swagger.Components.Schemas {
-			router.swagger.Components.Schemas[name] = item
+		for name, item := range obj.Swagger.Components.Schemas {
+			router.Swagger.Components.Schemas[name] = item
 		}
-		// router.handleFns = obj.handleFns
-		// obj.handleFns = router.handleFns
 	}
 	router.Router.Mount(path, handler)
 }
@@ -341,41 +342,14 @@ func (router *ReflectRouter) Mount(path string, handler http.Handler) {
 func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, options []operations.Option) {
 	o := operations.Operation{}
 	for _, option := range options {
-		o = option(r.swagger, o)
-	}
-
-	path = r.prefixPath + path
-	pathItem, exists := r.swagger.Paths[path]
-	if !exists {
-		pathItem = &openapi3.PathItem{}
-	}
-	switch method {
-	case http.MethodGet:
-		pathItem.Get = &o.Operation
-	case http.MethodPut:
-		pathItem.Put = &o.Operation
-	case http.MethodPost:
-		pathItem.Post = &o.Operation
-	case http.MethodDelete:
-		pathItem.Delete = &o.Operation
-	case http.MethodPatch:
-		pathItem.Patch = &o.Operation
-	case http.MethodHead:
-		pathItem.Head = &o.Operation
-	case http.MethodTrace:
-		pathItem.Trace = &o.Operation
-	case http.MethodConnect:
-		pathItem.Connect = &o.Operation
-	case http.MethodOptions:
-		pathItem.Options = &o.Operation
+		option(r.Swagger, o)
 	}
 
 	fn, err := HandlerFromFnDefault(handler, r.handleFns, r.Components())
 	if err != nil {
 		panic(err)
 	}
-	r.mux.MethodFunc(method, path, fn)
-	r.swagger.Paths[path] = pathItem
+	r.Router.MethodFunc(method, path, fn, options)
 }
 
 func (r *ReflectRouter) Get(path string, handler interface{}, options []operations.Option) {
@@ -416,7 +390,7 @@ func (r *ReflectRouter) Head(path string, handler interface{}, options []operati
 
 // UseRouter copies over the routes and swagger info from the other router.
 func (r *ReflectRouter) UseRouter(other *ReflectRouter) *ReflectRouter {
-	r.swagger.Info = other.swagger.Info
+	r.Swagger.Info = other.Swagger.Info
 	r.Mount("/", other)
 	return r
 }

@@ -10,10 +10,48 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"chi-openapi/pkg/openapi"
 	. "chi-openapi/pkg/openapi/operations"
+	"chi-openapi/pkg/router"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
 )
+
+// jsonHeader sets the content type to application/json
+func jsonHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
+}
+
+type tester interface {
+	Error(args ...interface{})
+	Log(args ...interface{})
+}
+
+func errorHandler(t tester) func(http.ResponseWriter, *http.Request, error) {
+	return func(w http.ResponseWriter, _ *http.Request, err error) {
+		if re, ok := err.(*openapi3filter.RequestError); ok {
+			if _, ok := re.Err.(*openapi3.SchemaError); ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
+func dummyHandler(_ http.ResponseWriter, _ *http.Request) {}
+
+type Response struct {
+	String string    `json:"string"`
+	Int    int       `json:"int" min:"3"`
+	Date   time.Time `json:"date"`
+}
 
 type reflectInput struct {
 	Value string `json:"name"`
@@ -83,7 +121,7 @@ func TestReflectionPathParams(t *testing.T) {
 
 	r := NewReflectRouter(RequestHandleFns{})
 	r.Use(jsonHeader)
-	r.Use(SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
 	r.UseRouter(dummyR)
 	components := r.Components()
 
@@ -122,7 +160,7 @@ func TestReflectionFuncReturns(t *testing.T) {
 
 	r := NewReflectRouter(RequestHandleFns{})
 	r.Use(jsonHeader)
-	r.Use(SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
 	r.UseRouter(dummyR)
 
 	components := r.Components()
@@ -216,7 +254,7 @@ func TestReflectionHandler(t *testing.T) {
 		w.Write([]byte("{}"))
 	}
 
-	dummyR := NewRouter()
+	dummyR := router.NewRouter()
 	dummyR.Get("/", reflectionHandler, []Option{
 		Params(reflectParmas{}),
 		JSONResponse(http.StatusOK, "OK", Response{}),
@@ -226,11 +264,11 @@ func TestReflectionHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := NewRouter()
+	r := router.NewRouter()
 	r.Use(jsonHeader)
-	r.Use(SetOpenAPIInput(filterRouter, errorHandler(t)))
-	r.Use(VerifyRequest(errorHandler(t)))
-	r.Use(VerifyResponse(errorHandler(t)))
+	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.Use(router.VerifyRequest(errorHandler(t)))
+	r.Use(router.VerifyResponse(errorHandler(t)))
 	r.UseRouter(dummyR)
 
 	t.Run("normal", func(t *testing.T) {
@@ -256,7 +294,7 @@ func TestReflectionHandler(t *testing.T) {
 }
 
 func BenchmarkReflection(b *testing.B) {
-	dummyR := NewRouter()
+	dummyR := router.NewRouter()
 	dummyR.Use(jsonHeader)
 	dummyR.Get("/", dummyHandler, []Option{
 		JSONResponse(http.StatusOK, "OK", Response{}),
@@ -286,11 +324,11 @@ func BenchmarkReflection(b *testing.B) {
 	}
 
 	b.Run("verify request and response", func(b *testing.B) {
-		r := NewRouter().
+		r := router.NewRouter().
 			With(jsonHeader).
-			With(SetOpenAPIInput(filterRouter, errorHandler(b))).
-			With(VerifyRequest(errorHandler(b))).
-			With(VerifyResponse(errorHandler(b)))
+			With(router.SetOpenAPIInput(filterRouter, errorHandler(b))).
+			With(router.VerifyRequest(errorHandler(b))).
+			With(router.VerifyResponse(errorHandler(b)))
 		r.Get("/", handler, []Option{
 			JSONBody("required data", reflectInput{}),
 			JSONResponse(200, "OK", Response{}),
@@ -304,7 +342,7 @@ func BenchmarkReflection(b *testing.B) {
 }
 
 func BenchmarkReflectionQueryParams(b *testing.B) {
-	dummyR := NewRouter()
+	dummyR := router.NewRouter()
 	dummyR.Use(jsonHeader)
 	dummyR.Get("/", dummyHandler, []Option{
 		Params(reflectParmas{}),
@@ -338,11 +376,11 @@ func BenchmarkReflectionQueryParams(b *testing.B) {
 	req.Header.Add("Content-Type", "application/json")
 
 	b.Run("load simple query param", func(b *testing.B) {
-		r := NewRouter().
+		r := router.NewRouter().
 			With(jsonHeader).
-			With(SetOpenAPIInput(filterRouter, errorHandler(b))).
-			With(VerifyRequest(errorHandler(b))).
-			With(VerifyResponse(errorHandler(b)))
+			With(router.SetOpenAPIInput(filterRouter, errorHandler(b))).
+			With(router.VerifyRequest(errorHandler(b))).
+			With(router.VerifyResponse(errorHandler(b)))
 		r.Get("/", handler, []Option{
 			Params(reflectParmas{}),
 			JSONBody("required data", reflectInput{}),
