@@ -2,7 +2,6 @@ package operations
 
 import (
 	"fmt"
-	"net/http"
 
 	"chi-openapi/pkg/openapi"
 
@@ -16,9 +15,11 @@ type Operation struct {
 type Option func(*openapi3.Swagger, Operation) Operation
 type Options []Option
 
-type handler interface {
-	Error(w http.ResponseWriter, err error)
-	Success(w http.ResponseWriter, obj interface{})
+func Deprecated() Option {
+	return func(_ *openapi3.Swagger, o Operation) Operation {
+		o.Deprecated = true
+		return o
+	}
 }
 
 func Summary(summary string) Option {
