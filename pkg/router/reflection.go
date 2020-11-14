@@ -38,23 +38,23 @@ var DefaultArgCreators = ArgCreators{
 	},
 }
 
-type Handler interface {
-	Error(w http.ResponseWriter, err error)
+type RequestHandler interface {
+	Error(w http.ResponseWriter, r *http.Request, err error)
 	Success(w http.ResponseWriter, obj interface{})
 }
 
-type HandleFns struct {
-	ErrFn     func(http.ResponseWriter, error)
+type RequestHandleFns struct {
+	ErrFn     ErrorHandler
 	SuccessFn func(w http.ResponseWriter, response interface{})
 }
 
-func (h HandleFns) Error(w http.ResponseWriter, err error) {
+func (h RequestHandleFns) Error(w http.ResponseWriter, r *http.Request, err error) {
 	if h.ErrFn != nil {
-		h.ErrFn(w, err)
+		h.ErrFn(w, r, err)
 	}
 }
 
-func (h HandleFns) Success(w http.ResponseWriter, obj interface{}) {
+func (h RequestHandleFns) Success(w http.ResponseWriter, obj interface{}) {
 	if h.SuccessFn != nil {
 		h.SuccessFn(w, obj)
 	}
@@ -85,7 +85,7 @@ type handlerArgType struct {
 // any errors during the http.Handler
 // All arguments will be automatically created and supplied to the function.
 // Only loads params and one json body schema in the components.
-func HandlerFromFn(fnPtr interface{}, fns Handler, components openapi.Components, creators ArgCreators) (http.HandlerFunc, error) {
+func HandlerFromFn(fnPtr interface{}, fns RequestHandler, components openapi.Components, creators ArgCreators) (http.HandlerFunc, error) {
 	if fnPtr == nil {
 		return nil, fmt.Errorf("received a nil value for the fnPtr to HandlerFromFn")
 	}
@@ -168,14 +168,14 @@ func HandlerFromFn(fnPtr interface{}, fns Handler, components openapi.Components
 		case 1:
 			returnHandlerFn = func(w http.ResponseWriter, r *http.Request, values []reflect.Value) {
 				if err := getErr(values, 0); err != nil {
-					fns.Error(w, err)
+					fns.Error(w, r, err)
 					return
 				}
 			}
 		case 2:
 			returnHandlerFn = func(w http.ResponseWriter, r *http.Request, values []reflect.Value) {
 				if err := getErr(values, 1); err != nil {
-					fns.Error(w, err)
+					fns.Error(w, r, err)
 					return
 				} else {
 					fns.Success(w, values[0].Interface())
@@ -192,26 +192,26 @@ func HandlerFromFn(fnPtr interface{}, fns Handler, components openapi.Components
 			case argTypeOther:
 				argCreator, has := creators[arg.ReflectType]
 				if !has {
-					fns.Error(w, fmt.Errorf("unknown type: %v", arg.ReflectType))
+					fns.Error(w, r, fmt.Errorf("unknown type: %v", arg.ReflectType))
 					return
 
 				}
 				value, err := argCreator(w, r)
 				if err != nil {
-					fns.Error(w, err)
+					fns.Error(w, r, err)
 					return
 				}
 				localArgs = append(localArgs, value)
 			case argTypeParam:
 				params, has := components.Parameters[arg.ReflectType]
 				if !has {
-					fns.Error(w, fmt.Errorf("unknown paramater: %v", arg.ReflectType))
+					fns.Error(w, r, fmt.Errorf("unknown paramater: %v", arg.ReflectType))
 					return
 				}
 				obj := reflect.New(arg.ReflectType).Elem()
 				input, err := InputFromCTX(r.Context())
 				if err != nil {
-					fns.Error(w, err)
+					fns.Error(w, r, err)
 					return
 				}
 				v, err := openapi.LoadParamStruct(obj.Interface(), openapi.LoadParamInput{
@@ -220,14 +220,14 @@ func HandlerFromFn(fnPtr interface{}, fns Handler, components openapi.Components
 					Params:                 params,
 				})
 				if err != nil {
-					fns.Error(w, err)
+					fns.Error(w, r, err)
 					return
 				}
 				localArgs = append(localArgs, v)
 			case argTypeJSONBody:
 				schema, has := components.Schemas[arg.ReflectType.Name()]
 				if !has {
-					fns.Error(w, fmt.Errorf("unknown json body: %v", arg.ReflectType))
+					fns.Error(w, r, fmt.Errorf("unknown json body: %v", arg.ReflectType))
 					return
 				}
 				// TODO: support data wrapper types
@@ -238,7 +238,7 @@ func HandlerFromFn(fnPtr interface{}, fns Handler, components openapi.Components
 				b, err := ioutil.ReadAll(r.Body)
 
 				if err != nil {
-					fns.Error(w, err)
+					fns.Error(w, r, err)
 					return
 				}
 
@@ -247,24 +247,24 @@ func HandlerFromFn(fnPtr interface{}, fns Handler, components openapi.Components
 					if errors.As(err, &jsonErr) {
 						input, err := InputFromCTX(r.Context())
 						if err != nil {
-							fns.Error(w, err)
+							fns.Error(w, r, err)
 							return
 						}
 
 						body := input.Route.Operation.RequestBody
 						if body != nil {
-							fns.Error(w, err)
+							fns.Error(w, r, err)
 							return
 						}
 
 						if body.Value.Required {
-							fns.Error(w, fmt.Errorf("Required json body"))
+							fns.Error(w, r, fmt.Errorf("Required json body"))
 							return
 						}
 						localArgs = append(localArgs, argObj.Elem())
 						continue
 					} else {
-						fns.Error(w, err)
+						fns.Error(w, r, err)
 						return
 					}
 
@@ -272,11 +272,11 @@ func HandlerFromFn(fnPtr interface{}, fns Handler, components openapi.Components
 
 				v, err := openapi.VarToInterface(argObj.Elem().Interface())
 				if err != nil {
-					fns.Error(w, err)
+					fns.Error(w, r, err)
 					return
 				}
 				if err := schema.Value.VisitJSON(v); err != nil {
-					fns.Error(w, err)
+					fns.Error(w, r, err)
 					return
 				}
 				localArgs = append(localArgs, argObj.Elem())
@@ -288,24 +288,24 @@ func HandlerFromFn(fnPtr interface{}, fns Handler, components openapi.Components
 	}, nil
 }
 
-func HandlerFromFnDefault(fnPtr interface{}, fns HandleFns, components openapi.Components) (http.HandlerFunc, error) {
+func HandlerFromFnDefault(fnPtr interface{}, fns RequestHandleFns, components openapi.Components) (http.HandlerFunc, error) {
 	return HandlerFromFn(fnPtr, fns, components, DefaultArgCreators)
 }
 
 type ReflectRouter struct {
 	*Router
-	handleFns HandleFns
+	handleFns RequestHandleFns
 }
 
 // NewReflectRouter returns a wrapped chi router
-func NewReflectRouter(handleFns HandleFns) *ReflectRouter {
+func NewReflectRouter(handleFns RequestHandleFns) *ReflectRouter {
 	return &ReflectRouter{
 		NewRouter(),
 		handleFns,
 	}
 }
 
-func NewReflectRouterWithInfo(info openapi.Info, handleFns HandleFns) *ReflectRouter {
+func NewReflectRouterWithInfo(info openapi.Info, handleFns RequestHandleFns) *ReflectRouter {
 	r := NewReflectRouter(handleFns)
 	apiInfo := openapi3.Info(info)
 	r.swagger.Info = &apiInfo

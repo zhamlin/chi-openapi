@@ -35,9 +35,9 @@ func reflectionHandlerReturnErr(body reflectInput) error {
 	return fmt.Errorf("error " + body.Value)
 }
 
-func errHandler(t tester) HandleFns {
-	return HandleFns{
-		ErrFn: func(_ http.ResponseWriter, err error) {
+func errHandler(t tester) RequestHandleFns {
+	return RequestHandleFns{
+		ErrFn: func(_ http.ResponseWriter, _ *http.Request, err error) {
 			t.Log("error", err)
 		},
 		SuccessFn: func(_ http.ResponseWriter, resp interface{}) {
@@ -47,7 +47,7 @@ func errHandler(t tester) HandleFns {
 }
 
 func routerWithMiddleware(handler interface{}) *ReflectRouter {
-	dummyR := NewReflectRouter(HandleFns{})
+	dummyR := NewReflectRouter(RequestHandleFns{})
 	dummyR.Get("/", handler, []Option{
 		Params(reflectParmas{}),
 		JSONResponse(http.StatusOK, "OK", Response{}),
@@ -59,8 +59,8 @@ func TestReflectionPathParams(t *testing.T) {
 	type pathParam struct {
 		ID string `path:"some_id"`
 	}
-	fns := HandleFns{
-		ErrFn: func(_ http.ResponseWriter, err error) {
+	fns := RequestHandleFns{
+		ErrFn: func(_ http.ResponseWriter, _ *http.Request, err error) {
 			t.Errorf("expected: 'error %s', got: %v", "test", err)
 		},
 		SuccessFn: func(_ http.ResponseWriter, obj interface{}) {
@@ -81,7 +81,7 @@ func TestReflectionPathParams(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := NewReflectRouter(HandleFns{})
+	r := NewReflectRouter(RequestHandleFns{})
 	r.Use(jsonHeader)
 	r.Use(SetOpenAPIInput(filterRouter, errorHandler(t)))
 	r.UseRouter(dummyR)
@@ -103,7 +103,7 @@ func TestReflectionPathParams(t *testing.T) {
 }
 
 func TestReflectionFuncReturns(t *testing.T) {
-	dummyR := NewReflectRouter(HandleFns{})
+	dummyR := NewReflectRouter(RequestHandleFns{})
 	dummyR.Get("/multi_return", func(ctx context.Context, params reflectParmas) (Response, error) {
 		t.Logf("%+v\n", params)
 		if params.Int < 0 {
@@ -120,7 +120,7 @@ func TestReflectionFuncReturns(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := NewReflectRouter(HandleFns{})
+	r := NewReflectRouter(RequestHandleFns{})
 	r.Use(jsonHeader)
 	r.Use(SetOpenAPIInput(filterRouter, errorHandler(t)))
 	r.UseRouter(dummyR)
@@ -130,8 +130,8 @@ func TestReflectionFuncReturns(t *testing.T) {
 
 	t.Run("error only return", func(t *testing.T) {
 		input := reflectInput{Value: "name"}
-		handler, err := HandlerFromFnDefault(reflectionHandlerReturnErr, HandleFns{
-			ErrFn: func(_ http.ResponseWriter, err error) {
+		handler, err := HandlerFromFnDefault(reflectionHandlerReturnErr, RequestHandleFns{
+			ErrFn: func(_ http.ResponseWriter, _ *http.Request, err error) {
 				if err.Error() != "error "+input.Value {
 					t.Errorf("expected: 'error %s', got: %v", input.Value, err)
 				}
@@ -155,8 +155,8 @@ func TestReflectionFuncReturns(t *testing.T) {
 
 	t.Run("multiple return", func(t *testing.T) {
 		input := reflectInput{Value: "name"}
-		handler, err := HandlerFromFnDefault(r.ServeHTTP, HandleFns{
-			ErrFn: func(_ http.ResponseWriter, err error) {
+		handler, err := HandlerFromFnDefault(r.ServeHTTP, RequestHandleFns{
+			ErrFn: func(_ http.ResponseWriter, _ *http.Request, err error) {
 				if err.Error() != "error "+input.Value {
 					t.Errorf("expected: 'error %s', got: %v", input.Value, err)
 				}
@@ -280,7 +280,7 @@ func BenchmarkReflection(b *testing.B) {
 
 	components := openapi.NewComponents()
 	openapi.SchemaFromObj(reflectInput{}, components.Schemas)
-	handler, err := HandlerFromFnDefault(reflectionHandlerBody, HandleFns{}, components)
+	handler, err := HandlerFromFnDefault(reflectionHandlerBody, RequestHandleFns{}, components)
 	if err != nil {
 		b.Error(err)
 	}
@@ -324,7 +324,7 @@ func BenchmarkReflectionQueryParams(b *testing.B) {
 
 	components := openapi.NewComponents()
 	openapi.SchemaFromObj(reflectInput{}, components.Schemas)
-	handler, err := HandlerFromFnDefault(reflectionHandlerReturnMultiple, HandleFns{}, components)
+	handler, err := HandlerFromFnDefault(reflectionHandlerReturnMultiple, RequestHandleFns{}, components)
 	if err != nil {
 		b.Fatal(err)
 	}

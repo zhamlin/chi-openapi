@@ -21,13 +21,6 @@ type handler interface {
 	Success(w http.ResponseWriter, obj interface{})
 }
 
-// TODO: allow override routes handlerFns
-func HandlerFns(fns handler) Option {
-	return func(_ *openapi3.Swagger, o Operation) Operation {
-		return o
-	}
-}
-
 func Summary(summary string) Option {
 	return func(_ *openapi3.Swagger, o Operation) Operation {
 		o.Summary = summary
