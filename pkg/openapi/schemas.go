@@ -96,8 +96,8 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 	switch typ.Kind() {
 	case reflect.Interface:
 		if obj != nil {
-			typ := reflect.ValueOf(obj).Type()
-			return schemaFromType(typ, obj, schemas)
+			v := reflect.TypeOf(obj)
+			return schemaFromType(v, obj, schemas)
 		}
 		schema.Type = "object"
 	case reflect.String:
@@ -120,11 +120,14 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 		schema.Type = "integer"
 	case reflect.Ptr:
 		// TODO: handle pointers correctly, they should be optional
-	case reflect.Array:
-		fallthrough
-	case reflect.Slice:
+	case reflect.Slice, reflect.Array:
 		schema.Type = "array"
-		schema.Items = schemaFromType(typ.Elem(), obj, schemas)
+		if obj != nil {
+			newObj := reflect.New(typ.Elem()).Elem().Interface()
+			schema.Items = schemaFromType(typ.Elem(), newObj, schemas)
+		} else {
+			schema.Items = schemaFromType(typ.Elem(), nil, schemas)
+		}
 	case reflect.Struct:
 		// handle special structs
 		inline := false
@@ -181,24 +184,23 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 		s := &openapi3.SchemaRef{}
 		// handle special structs here
 		switch field.Type.Kind() {
-		case reflect.Slice:
+		case reflect.Slice, reflect.Array:
 			newObj := obj
 			if objValue.IsValid() {
 				newObj = objValue.Field(i)
 			}
 			s = schemaFromType(field.Type, newObj, schemas)
 		default:
-			if objValue.IsValid() && objValue.Kind() == reflect.Struct {
+			if objValue.IsValid() {
 				newObj := obj
-				if objValue.IsValid() {
-					fieldObj := objValue.Field(i)
-					if fieldObj.IsValid() {
-						newObj = fieldObj.Interface()
-					}
+				fieldObj := objValue.Field(i)
+				if fieldObj.IsValid() {
+					newObj = fieldObj.Interface()
 				}
 				s = schemaFromType(field.Type, newObj, schemas)
+			} else {
+				s = schemaFromType(field.Type, obj, schemas)
 			}
-			s = schemaFromType(field.Type, obj, schemas)
 		}
 		for name, fn := range schemaFuncTags {
 			value, has := field.Tag.Lookup(name)
@@ -220,6 +222,14 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 type schemaTagFunc func(string, bool, *openapi3.Schema) error
 
 var schemaFuncTags = map[string]schemaTagFunc{
+	// all
+	"nullable": func(value string, has bool, s *openapi3.Schema) error {
+		if has {
+			s.Nullable = true
+		}
+		return nil
+	},
+
 	// all
 	"readOnly": func(value string, has bool, s *openapi3.Schema) error {
 		if has {

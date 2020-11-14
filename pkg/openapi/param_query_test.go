@@ -4,6 +4,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3filter"
 	// . "chi-openapi/internal/testing"
 )
 
@@ -127,11 +129,19 @@ func TestLoadQueryParam(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params := ParamsFromObj(test.obj, nil)
+			params, err := ParamsFromObj(test.obj)
+			if err != nil {
+				t.Fatal(err)
+			}
 			req := httptest.NewRequest("GET", "/", nil)
 			req.URL.RawQuery = test.queries.Encode()
 			req.Header.Add("Content-Type", "application/json")
-			v, err := LoadParamStruct(req, test.obj, params)
+			v, err := LoadParamStruct(test.obj, LoadParamInput{
+				RequestValidationInput: &openapi3filter.RequestValidationInput{
+					Request: req,
+				},
+				Params: params,
+			})
 			if !test.wantErr && err != nil {
 				t.Fatal(err)
 			}

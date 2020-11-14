@@ -3,10 +3,10 @@ package openapi
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"reflect"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/pkg/errors"
 )
 
@@ -26,7 +26,12 @@ type Parameter struct {
 
 type Parameters map[string]*openapi3.ParameterRef
 
-var paramTags = []string{"path", "query", "header", "cookie"}
+var paramTags = []string{
+	openapi3.ParameterInPath,
+	openapi3.ParameterInQuery,
+	openapi3.ParameterInHeader,
+	openapi3.ParameterInCookie,
+}
 
 // getParamaterType will set the correct "in" value from the tag
 func getParamaterType(tag reflect.StructTag) Parameter {
@@ -98,26 +103,17 @@ func getParamaterOptions(tag reflect.StructTag) Parameter {
 
 const componentParamsPath = "#/components/parameters/"
 
-func paramFromStructField(field reflect.StructField, obj reflect.Value, params Parameters) *openapi3.ParameterRef {
-	name := getTypeName(field.Type)
-	if params != nil {
-		// if we've already loaded this type, return a reference
-		if obj, has := params[name]; has {
-			return &openapi3.ParameterRef{
-				Ref:   componentParamsPath + name,
-				Value: obj.Value,
-			}
-		}
-	}
-
+func paramFromStructField(field reflect.StructField, obj reflect.Value) (*openapi3.ParameterRef, error) {
 	param := getParamaterType(field.Tag)
+	if param.In == "" {
+		return nil, fmt.Errorf("field '%v' has no paramater location", field.Name)
+	}
 	var err error
 	for name, fn := range paramFuncTags {
 		value, has := field.Tag.Lookup(name)
 		param, err = fn(value, has, param)
 		if err != nil {
-			// TODO: remove
-			panic(err)
+			return nil, err
 		}
 	}
 
@@ -138,52 +134,44 @@ func paramFromStructField(field reflect.StructField, obj reflect.Value, params P
 			continue
 		}
 		if err := fn(value, has, param.Schema.Value); err != nil {
-			// TODO: remove
-			panic(err)
-		}
-	}
-
-	if params != nil {
-		ref := &openapi3.ParameterRef{
-			Value: &param.Parameter,
-		}
-
-		params[name] = ref
-		return &openapi3.ParameterRef{
-			Ref:   componentParamsPath + name,
-			Value: ref.Value,
+			return nil, err
 		}
 	}
 
 	return &openapi3.ParameterRef{
 		Value: &param.Parameter,
-	}
+	}, nil
 }
 
-func ParamsFromType(typ reflect.Type, obj reflect.Value, params Parameters) openapi3.Parameters {
+func ParamsFromType(typ reflect.Type, obj reflect.Value) (openapi3.Parameters, error) {
 	if typ.Kind() != reflect.Struct {
-		return openapi3.Parameters{}
+		return openapi3.Parameters{}, fmt.Errorf("expected a struct, got: %v", typ.Kind())
 	}
 
 	objParams := openapi3.Parameters{}
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		var paramRef *openapi3.ParameterRef
+		var err error
 		if obj.IsValid() {
 			fieldObj := obj.Field(i)
-			paramRef = paramFromStructField(field, fieldObj, params)
+			paramRef, err = paramFromStructField(field, fieldObj)
 		} else {
-			paramRef = paramFromStructField(field, obj, params)
+			paramRef, err = paramFromStructField(field, obj)
+		}
+
+		if err != nil {
+			return objParams, errors.Wrap(err, typ.String())
 		}
 		objParams = append(objParams, paramRef)
 	}
-	return objParams
+	return objParams, nil
 }
 
-func ParamsFromObj(obj interface{}, params Parameters) openapi3.Parameters {
+func ParamsFromObj(obj interface{}) (openapi3.Parameters, error) {
 	typ := reflect.TypeOf(obj)
 	value := reflect.ValueOf(obj)
-	return ParamsFromType(typ, value, params)
+	return ParamsFromType(typ, value)
 }
 
 // interfaceSlice converts a slice to an slices of interfaces.
@@ -212,10 +200,14 @@ func interfaceSlice(slice interface{}) []interface{} {
 	return ret
 }
 
-func varToInterface(obj interface{}) (interface{}, error) {
-	t := reflect.TypeOf(obj)
-	switch t.Kind() {
-	case reflect.Slice:
+func VarToInterface(obj interface{}) (interface{}, error) {
+	o := reflect.ValueOf(obj)
+	switch o.Kind() {
+	case reflect.Int64:
+		return o.Int(), nil
+	case reflect.Int:
+		return float64(o.Int()), nil
+	case reflect.Slice, reflect.Array:
 		return interfaceSlice(obj), nil
 	case reflect.Struct:
 		// TODO: benchmark this
@@ -233,45 +225,50 @@ func varToInterface(obj interface{}) (interface{}, error) {
 	}
 }
 
+type LoadParamInput struct {
+	*openapi3filter.RequestValidationInput
+	Params []*openapi3.ParameterRef
+}
+
 // LoadParamStruct takes a request, the param struct to populate, and the query params.
 // The obj will have the fields populated based on the openapi schema
-func LoadParamStruct(r *http.Request, obj interface{}, params []*openapi3.ParameterRef) (reflect.Value, error) {
+func LoadParamStruct(obj interface{}, input LoadParamInput) (reflect.Value, error) {
+	// value := reflect.ValueOf(obj)
 	value := reflect.New(reflect.TypeOf(obj)).Elem()
-	if value.NumField() != len(params) {
-		return value, fmt.Errorf("invalid param and struct field count")
+	if value.NumField() != len(input.Params) {
+		return value, fmt.Errorf("invalid param and struct field count; param=%d,struct=%d", len(input.Params), value.NumField())
 	}
 
 	for i := 0; i < value.NumField(); i++ {
 		field := value.Field(i)
-		p := params[i]
-		var value reflect.Value
+		p := input.Params[i]
+		var fValue reflect.Value
 		var err error
 
 		switch p.Value.In {
 		// TODO: other query params
 		case openapi3.ParameterInQuery:
-			value, err = LoadQueryParam(r, field.Type(), p.Value)
+			fValue, err = LoadQueryParam(input.Request, field.Type(), p.Value)
+		case openapi3.ParameterInPath:
+			fValue, err = LoadPathParam(input.PathParams, p.Value)
 		}
 
-		if err != nil || !value.IsValid() {
-			return value, errors.Wrapf(err, "failed loading param '%v', style: %v, explode: %v",
-				p.Value.Name, p.Value.Style, *p.Value.Explode)
+		if err != nil {
+			return fValue, errors.Wrapf(err, "failed loading param '%+v'", p.Value)
+		}
+		if !fValue.IsValid() {
+			return fValue, fmt.Errorf("invalid value for type: %v", field.Type())
 		}
 
-		if value.IsValid() {
-			v, err := varToInterface(value.Interface())
-			if err != nil {
-				return value, err
-			}
-			if err := p.Value.Schema.Value.VisitJSON(v); err != nil {
-				return value, err
-			}
-			field.Set(value)
-		} else {
-			return value, fmt.Errorf("invalid value for type: %v", field.Type())
+		v, err := VarToInterface(fValue.Interface())
+		if err != nil {
+			return fValue, err
 		}
+		if err := p.Value.Schema.Value.VisitJSON(v); err != nil {
+			return fValue, err
+		}
+		field.Set(fValue)
 
 	}
-
 	return value, nil
 }

@@ -94,6 +94,25 @@ func TestSchema(t *testing.T) {
             }
         `},
 		{
+			name:    "inline array",
+			schemas: true,
+			obj: Wrapper{
+				Data: []string{},
+			},
+			expected: `
+            {
+              "properties": {
+                "data": {
+                  "items": {
+                      "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            }
+        `},
+		{
 			name: "required struct fields",
 			obj: struct {
 				Required bool `json:"required" required:"true"`

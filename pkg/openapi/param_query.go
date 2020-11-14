@@ -56,9 +56,7 @@ func queryValueFn(value string, typ reflect.Type) (reflect.Value, error) {
 		return v, nil
 	}
 	switch typ.Kind() {
-	case reflect.Array:
-		fallthrough
-	case reflect.Slice:
+	case reflect.Slice, reflect.Array:
 		results := strings.Split(value, delim)
 		obj := reflect.New(typ).Elem()
 		for _, r := range results {
@@ -113,10 +111,13 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 
 		values, has := q[param.Name]
 		if !has {
-			return
+			if param.Required {
+				return result, fmt.Errorf("query param '%v' is required", param.Name)
+			}
+			return reflect.New(typ).Elem(), nil
 		}
 
-		if len(values) == 1 {
+		if len(values) == 1 && param.Schema.Value.Type != "array" {
 			return strToValue(values[0], typ)
 		}
 
@@ -129,9 +130,7 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 			obj = reflect.Append(obj, v)
 		}
 		return obj, nil
-	case queryFormat{true, "deepObject"}:
-		fallthrough
-	case queryFormat{false, "deepObject"}:
+	case queryFormat{false, "deepObject"}, queryFormat{true, "deepObject"}:
 		if typ.Kind() != reflect.Struct {
 			return result, fmt.Errorf("deepObject only supports structs")
 		}

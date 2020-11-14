@@ -30,6 +30,7 @@ func TestParams(t *testing.T) {
                 "required": true,
                 "explode": true,
                 "description": "test doc",
+                "style": "form",
                 "schema": {
                   "items": {
                     "type": "string"
@@ -44,7 +45,10 @@ func TestParams(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params := openapi.ParamsFromObj(test.obj, nil)
+			params, err := openapi.ParamsFromObj(test.obj)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
 				t.Error(err)
 			}
@@ -87,6 +91,8 @@ func TestParamsLocation(t *testing.T) {
               {
                 "in": "query",
                 "name": "name",
+                "style": "form",
+                "explode": true,
                 "schema": {
                   "type": "string"
                 }
@@ -128,7 +134,10 @@ func TestParamsLocation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params := openapi.ParamsFromObj(test.obj, nil)
+			params, err := openapi.ParamsFromObj(test.obj)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
 				t.Error(err)
 			}
@@ -155,6 +164,7 @@ func TestParamsSpecificSettings(t *testing.T) {
                   "in": "query",
                   "name": "name",
                   "style": "matrix",
+                  "explode": true,
                   "schema": {
                     "items": {
                       "type": "string"
@@ -175,6 +185,7 @@ func TestParamsSpecificSettings(t *testing.T) {
                   "in": "query",
                   "name": "name",
                   "style": "matrix",
+                  "explode": true,
                   "required": true,
                   "schema": {
                     "items": {
@@ -230,7 +241,10 @@ func TestParamsSpecificSettings(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params := openapi.ParamsFromObj(test.obj, nil)
+			params, err := openapi.ParamsFromObj(test.obj)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := JSONDiff(t, JSONT(t, params), test.expected); err != nil {
 				t.Error(err)
 			}

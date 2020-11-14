@@ -2,6 +2,7 @@ package operations
 
 import (
 	"fmt"
+	"net/http"
 
 	"chi-openapi/pkg/openapi"
 
@@ -14,6 +15,18 @@ type Operation struct {
 
 type Option func(*openapi3.Swagger, Operation) Operation
 type Options []Option
+
+type handler interface {
+	Error(w http.ResponseWriter, err error)
+	Success(w http.ResponseWriter, obj interface{})
+}
+
+// TODO: allow override routes handlerFns
+func HandlerFns(fns handler) Option {
+	return func(_ *openapi3.Swagger, o Operation) Operation {
+		return o
+	}
+}
 
 func Summary(summary string) Option {
 	return func(_ *openapi3.Swagger, o Operation) Operation {
@@ -32,6 +45,7 @@ func JSONBody(description string, model interface{}) Option {
 			Value: &openapi3.RequestBody{
 				Content:     openapi3.NewContentWithJSONSchemaRef(schema),
 				Description: description,
+				Required:    true,
 			},
 		}
 		return o
@@ -40,7 +54,11 @@ func JSONBody(description string, model interface{}) Option {
 
 func Params(model interface{}) Option {
 	return func(s *openapi3.Swagger, o Operation) Operation {
-		o.Parameters = openapi.ParamsFromObj(model, s.Components.Parameters)
+		var err error
+		o.Parameters, err = openapi.ParamsFromObj(model)
+		if err != nil {
+			panic(err)
+		}
 		return o
 	}
 }

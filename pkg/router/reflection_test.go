@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"chi-openapi/pkg/openapi"
@@ -19,18 +20,6 @@ type reflectInput struct {
 }
 type reflectParmas struct {
 	Int int `query:"int" required:"true"`
-}
-
-func reflectionHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Write([]byte("{}"))
-}
-
-func reflectionHandlerAuto(w http.ResponseWriter, params reflectParmas, input reflectInput) {
-	w.Write([]byte("{}"))
-}
-
-func reflectionHandlerParams(w http.ResponseWriter, params reflectParmas) {
-	w.Write([]byte("{}"))
 }
 
 func reflectionHandlerBody(w http.ResponseWriter, body reflectInput) {
@@ -46,21 +35,6 @@ func reflectionHandlerReturnErr(body reflectInput) error {
 	return fmt.Errorf("error " + body.Value)
 }
 
-func reflectionHandlerReturnMultiple(ctx context.Context, params reflectParmas) (Response, error) {
-	if params.Int < 0 {
-		return Response{}, fmt.Errorf("")
-	}
-	return Response{}, nil
-}
-
-func reflectionHandlerBackward(ctx context.Context, w http.ResponseWriter) {
-	w.Write([]byte("{}"))
-}
-
-func reflectionHandlerNew(ctx context.Context) (Response, error) {
-	return Response{}, nil
-}
-
 func errHandler(t tester) HandleFns {
 	return HandleFns{
 		ErrFn: func(_ http.ResponseWriter, err error) {
@@ -72,28 +46,86 @@ func errHandler(t tester) HandleFns {
 	}
 }
 
-// TODO: test params
+func routerWithMiddleware(handler interface{}) *ReflectRouter {
+	dummyR := NewReflectRouter(HandleFns{})
+	dummyR.Get("/", handler, []Option{
+		Params(reflectParmas{}),
+		JSONResponse(http.StatusOK, "OK", Response{}),
+	})
+	return dummyR
+}
 
-func TestReflectionFuncSimple(t *testing.T) {
-	handler, err := HandlerFromFnDefault(reflectionHandlerBackward, errHandler(t), openapi.NewComponents())
+func TestReflectionPathParams(t *testing.T) {
+	type pathParam struct {
+		ID string `path:"some_id"`
+	}
+	fns := HandleFns{
+		ErrFn: func(_ http.ResponseWriter, err error) {
+			t.Errorf("expected: 'error %s', got: %v", "test", err)
+		},
+		SuccessFn: func(_ http.ResponseWriter, obj interface{}) {
+			t.Logf("%+v\n", obj)
+		},
+	}
+	dummyR := NewReflectRouter(fns)
+	dummyR.Get("/path_param/{some_id}", func(ctx context.Context, param pathParam) (Response, error) {
+		t.Logf("%+v\n", param)
+		return Response{}, nil
+	}, []Option{
+		Params(pathParam{}),
+		JSONResponse(http.StatusOK, "OK", Response{}),
+	})
+
+	filterRouter, err := dummyR.FilterRouter()
 	if err != nil {
 		t.Error(err)
 	}
-	req := httptest.NewRequest("GET", "/?int=1", nil)
-	req.Header.Add("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	handler(w, req)
-	b, _ := ioutil.ReadAll(w.Body)
+	r := NewReflectRouter(HandleFns{})
+	r.Use(jsonHeader)
+	r.Use(SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.UseRouter(dummyR)
+	components := r.Components()
 
-	t.Log("body", string(b))
+	t.Run("simple path", func(t *testing.T) {
+		handler, err := HandlerFromFnDefault(r.ServeHTTP, fns, components)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequest("GET", "/path_param/20", nil)
+		req.Header.Add("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		ctx := context.Background()
+		handler(w, req.WithContext(ctx))
+	})
 }
 
 func TestReflectionFuncReturns(t *testing.T) {
-	components := openapi.NewComponents()
-	for n := range components.Parameters {
-		fmt.Printf("!!! %+v\n", n)
+	dummyR := NewReflectRouter(HandleFns{})
+	dummyR.Get("/multi_return", func(ctx context.Context, params reflectParmas) (Response, error) {
+		t.Logf("%+v\n", params)
+		if params.Int < 0 {
+			return Response{}, fmt.Errorf("")
+		}
+		return Response{}, nil
+	}, []Option{
+		Params(reflectParmas{}),
+		JSONResponse(http.StatusOK, "OK", Response{}),
+	})
+
+	filterRouter, err := dummyR.FilterRouter()
+	if err != nil {
+		t.Error(err)
 	}
+
+	r := NewReflectRouter(HandleFns{})
+	r.Use(jsonHeader)
+	r.Use(SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.UseRouter(dummyR)
+
+	components := r.Components()
 	openapi.SchemaFromObj(reflectInput{}, components.Schemas)
 
 	t.Run("error only return", func(t *testing.T) {
@@ -123,7 +155,7 @@ func TestReflectionFuncReturns(t *testing.T) {
 
 	t.Run("multiple return", func(t *testing.T) {
 		input := reflectInput{Value: "name"}
-		handler, err := HandlerFromFnDefault(reflectionHandlerReturnMultiple, HandleFns{
+		handler, err := HandlerFromFnDefault(r.ServeHTTP, HandleFns{
 			ErrFn: func(_ http.ResponseWriter, err error) {
 				if err.Error() != "error "+input.Value {
 					t.Errorf("expected: 'error %s', got: %v", input.Value, err)
@@ -141,11 +173,12 @@ func TestReflectionFuncReturns(t *testing.T) {
 			t.Error(err)
 		}
 
-		req := httptest.NewRequest("GET", "/", bytes.NewReader(data))
+		req := httptest.NewRequest("GET", "/multi_return?int=2", bytes.NewReader(data))
 		req.Header.Add("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
-		handler(w, req)
+		ctx := context.Background()
+		handler(w, req.WithContext(ctx))
 	})
 }
 
@@ -179,6 +212,10 @@ func TestReflectionFuncBody(t *testing.T) {
 }
 
 func TestReflectionHandler(t *testing.T) {
+	reflectionHandler := func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("{}"))
+	}
+
 	dummyR := NewRouter()
 	dummyR.Get("/", reflectionHandler, []Option{
 		Params(reflectParmas{}),
@@ -191,8 +228,9 @@ func TestReflectionHandler(t *testing.T) {
 
 	r := NewRouter()
 	r.Use(jsonHeader)
-	r.Use(VerifyRequest(filterRouter, errorHandler(t)))
-	r.Use(VerifyResponse(filterRouter, errorHandler(t)))
+	r.Use(SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.Use(VerifyRequest(errorHandler(t)))
+	r.Use(VerifyResponse(errorHandler(t)))
 	r.UseRouter(dummyR)
 
 	t.Run("normal", func(t *testing.T) {
@@ -242,7 +280,7 @@ func BenchmarkReflection(b *testing.B) {
 
 	components := openapi.NewComponents()
 	openapi.SchemaFromObj(reflectInput{}, components.Schemas)
-	handler, err := HandlerFromFnDefault(reflectionHandlerBody, errHandler(b), components)
+	handler, err := HandlerFromFnDefault(reflectionHandlerBody, HandleFns{}, components)
 	if err != nil {
 		b.Error(err)
 	}
@@ -250,8 +288,9 @@ func BenchmarkReflection(b *testing.B) {
 	b.Run("verify request and response", func(b *testing.B) {
 		r := NewRouter().
 			With(jsonHeader).
-			With(VerifyRequest(filterRouter, errorHandler(b))).
-			With(VerifyResponse(filterRouter, errorHandler(b)))
+			With(SetOpenAPIInput(filterRouter, errorHandler(b))).
+			With(VerifyRequest(errorHandler(b))).
+			With(VerifyResponse(errorHandler(b)))
 		r.Get("/", handler, []Option{
 			JSONBody("required data", reflectInput{}),
 			JSONResponse(200, "OK", Response{}),
@@ -262,5 +301,57 @@ func BenchmarkReflection(b *testing.B) {
 			r.ServeHTTP(w, req)
 		}
 	})
+}
 
+func BenchmarkReflectionQueryParams(b *testing.B) {
+	dummyR := NewRouter()
+	dummyR.Use(jsonHeader)
+	dummyR.Get("/", dummyHandler, []Option{
+		Params(reflectParmas{}),
+		JSONResponse(http.StatusOK, "OK", Response{}),
+	})
+	filterRouter, err := dummyR.FilterRouter()
+	if err != nil {
+		b.Error(err)
+	}
+
+	reflectionHandlerReturnMultiple := func(ctx context.Context, params reflectParmas) (Response, error) {
+		if params.Int < 0 {
+			return Response{}, fmt.Errorf("")
+		}
+		return Response{}, nil
+	}
+
+	components := openapi.NewComponents()
+	openapi.SchemaFromObj(reflectInput{}, components.Schemas)
+	handler, err := HandlerFromFnDefault(reflectionHandlerReturnMultiple, HandleFns{}, components)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	v := url.Values{
+		"int": []string{"10"},
+	}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.URL.RawQuery = v.Encode()
+	req.Header.Add("Content-Type", "application/json")
+
+	b.Run("load simple query param", func(b *testing.B) {
+		r := NewRouter().
+			With(jsonHeader).
+			With(SetOpenAPIInput(filterRouter, errorHandler(b))).
+			With(VerifyRequest(errorHandler(b))).
+			With(VerifyResponse(errorHandler(b)))
+		r.Get("/", handler, []Option{
+			Params(reflectParmas{}),
+			JSONBody("required data", reflectInput{}),
+			JSONResponse(200, "OK", Response{}),
+		})
+
+		b.ReportAllocs()
+		for n := 0; n < b.N; n++ {
+			r.ServeHTTP(w, req)
+		}
+	})
 }

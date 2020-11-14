@@ -1,6 +1,11 @@
 package router
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -43,8 +48,6 @@ func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationIn
 	return &openapi3filter.RequestValidationInput{
 		Request:     r,
 		QueryParams: r.URL.Query(),
-		// ParamDecoder: queryParamLoader,
-		PathParams: pathParams(r),
 		Options: &openapi3filter.Options{
 			IncludeResponseStatus: true,
 		},
@@ -53,23 +56,58 @@ func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationIn
 
 type ErrorHandler func(http.ResponseWriter, *http.Request, error)
 
-// VerifyRequest validates requests against matching openapi routes on the router
-func VerifyRequest(router *openapi3filter.Router, errFn ErrorHandler) func(http.Handler) http.Handler {
+// InputKey is used to get the *openapi3filter.RequestValidationInput{}
+// from a ctx
+var InputKey = struct{}{}
+
+func InputFromCTX(ctx context.Context) (*openapi3filter.RequestValidationInput, error) {
+	input, ok := ctx.Value(InputKey).(*openapi3filter.RequestValidationInput)
+	if !ok {
+		return input, fmt.Errorf("input not found in context")
+	}
+	return input, nil
+}
+
+func SetOpenAPIInput(router *openapi3filter.Router, errFn ErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			route, _, err := router.FindRoute(r.Method, r.URL)
+			route, pathParams, err := router.FindRoute(r.Method, r.URL)
+			if err != nil {
+				errFn(w, r, err)
+				return
+			}
+			input := requestValidationInput(r)
+			input.PathParams = pathParams
+			input.Route = route
+
+			ctx := r.Context()
+			newCTX := context.WithValue(ctx, InputKey, input)
+			next.ServeHTTP(w, r.WithContext(newCTX))
+		})
+	}
+}
+
+// VerifyRequest validates requests against matching openapi routes;
+// Requires SetOpenAPIInput middleware to have been called
+func VerifyRequest(errFn ErrorHandler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			input, err := InputFromCTX(ctx)
 			if err != nil {
 				errFn(w, r, err)
 				return
 			}
 
-			input := requestValidationInput(r)
-			input.Route = route
-			err = openapi3filter.ValidateRequest(r.Context(), input)
+			// The body _could_ be read more than once so go ahead and create a copy
+			newBody := &bytes.Buffer{}
+			input.Request.Body = ioutil.NopCloser(io.TeeReader(r.Body, newBody))
+			err = openapi3filter.ValidateRequest(ctx, input)
 			if err != nil {
 				errFn(w, r, err)
 				return
 			}
+			r.Body = ioutil.NopCloser(newBody)
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -97,34 +135,33 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 	return len(w.body), nil
 }
 
-// VerifyResponse validates response against matching openapi routes on the router
-func VerifyResponse(router *openapi3filter.Router, errFn ErrorHandler) func(http.Handler) http.Handler {
+// VerifyResponse validates response against matching openapi routes
+// Requires SetOpenAPIInput middleware to have been called
+func VerifyResponse(errFn ErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			route, _, err := router.FindRoute(r.Method, r.URL)
-			if err != nil {
-				errFn(w, r, err)
-				return
-			}
-
 			rw := &responseWriter{
 				header: w.Header(),
 			}
 			next.ServeHTTP(rw, r)
 
-			validationInput := requestValidationInput(r)
-			validationInput.Route = route
-			input := &openapi3filter.ResponseValidationInput{
+			input, err := InputFromCTX(r.Context())
+			if err != nil {
+				errFn(w, r, err)
+				return
+			}
+
+			responseInput := &openapi3filter.ResponseValidationInput{
 				Header: rw.header,
 				Status: rw.statusCode,
 				Options: &openapi3filter.Options{
 					IncludeResponseStatus: true,
 				},
-				RequestValidationInput: validationInput,
+				RequestValidationInput: input,
 			}
-			input.SetBodyBytes(rw.body)
+			responseInput.SetBodyBytes(rw.body)
 
-			err = openapi3filter.ValidateResponse(r.Context(), input)
+			err = openapi3filter.ValidateResponse(r.Context(), responseInput)
 			if err != nil {
 				errFn(w, r, err)
 				return

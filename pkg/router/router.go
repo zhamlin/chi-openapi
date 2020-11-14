@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"chi-openapi/pkg/openapi"
@@ -217,4 +218,11 @@ func (r *Router) UseRouter(other *Router) *Router {
 	r.swagger.Info = other.swagger.Info
 	r.Mount("/", other)
 	return r
+}
+
+func (r *Router) Components() openapi.Components {
+	return openapi.Components{
+		Schemas:    r.swagger.Components.Schemas,
+		Parameters: map[reflect.Type]openapi3.Parameters{},
+	}
 }
