@@ -20,6 +20,9 @@ func jsonTagName(tag reflect.StructTag) (string, bool) {
 	if !ok {
 		return "", ok
 	}
+	if value == "-" {
+		return "", false
+	}
 	results := strings.Split(value, ",")
 	return results[0], true
 }

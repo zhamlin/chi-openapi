@@ -167,13 +167,11 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 		// fieldObj := objValue.Field(i).Elem().Type()
 
 		// json name lookup, ignore -, default to field name
-		name := field.Name
-		if val, ok := field.Tag.Lookup("json"); ok {
-			if val == "-" {
-				continue
-			}
-			name = val
+		val, ok := jsonTagName(field.Tag)
+		if !ok {
+			continue
 		}
+		name := val
 
 		if val, ok := field.Tag.Lookup("required"); ok {
 			if tagBoolValue(val) {
