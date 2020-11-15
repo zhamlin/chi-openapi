@@ -320,6 +320,7 @@ func TestRouterDefaultResponse(t *testing.T) {
 
 	r := NewRouter().With(jsonHeader)
 	r.SetDefaultJSON("unexpected error", Error{})
+	r.SetStatusDefault(http.StatusNotFound, "NotFound", nil)
 	r.Mount("/", router)
 
 	spec, err := r.GenerateSpec()
@@ -330,7 +331,10 @@ func TestRouterDefaultResponse(t *testing.T) {
     {
       "components": {
         "responses": {
-          "Default": {
+          "404": {
+            "description": "NotFound"
+          },
+          "default": {
             "content": {
               "application/json": {
                 "schema": {
@@ -364,8 +368,11 @@ func TestRouterDefaultResponse(t *testing.T) {
               "200": {
                 "description": "OK"
               },
+              "404": {
+                "$ref": "#/components/responses/404"
+              },
               "default": {
-                "$ref": "#/components/responses/Default"
+                "$ref": "#/components/responses/default"
               }
             }
           }
@@ -375,6 +382,9 @@ func TestRouterDefaultResponse(t *testing.T) {
             "responses": {
               "200": {
                 "description": "OK"
+              },
+              "404": {
+                "$ref": "#/components/responses/404"
               },
               "default": {
                 "description": "default response"

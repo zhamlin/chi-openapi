@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
-	"strings"
 
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/openapi/operations"
@@ -328,14 +327,10 @@ func (r *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
 func (r *ReflectRouter) Mount(path string, handler http.Handler) {
 	switch obj := handler.(type) {
 	case *ReflectRouter:
-		for name, item := range obj.Swagger.Paths {
-			r.Swagger.Paths[path+strings.TrimRight(name, "/")] = item
-		}
-		for name, item := range obj.Swagger.Components.Schemas {
-			r.Swagger.Components.Schemas[name] = item
-		}
+		r.Router.Mount(path, obj.Router)
+	default:
+		r.Router.Mount(path, handler)
 	}
-	r.Router.Mount(path, handler)
 }
 
 // MethodFunc adds routes for `pattern` that matches the `method` HTTP method.
