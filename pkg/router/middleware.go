@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -58,6 +59,16 @@ func SetOpenAPIInput(router *openapi3filter.Router, errFn ErrorHandler) func(htt
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			route, pathParams, err := router.FindRoute(r.Method, r.URL)
 			if err != nil {
+				var rError *openapi3filter.RouteError
+				if errors.As(err, &rError) {
+					switch rError.Reason {
+					case "Path was not found":
+						w.WriteHeader(http.StatusNotFound)
+					case "Path doesn't support the HTTP method":
+						w.WriteHeader(http.StatusMethodNotAllowed)
+					}
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
