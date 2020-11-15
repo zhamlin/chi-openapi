@@ -8,21 +8,9 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi"
 )
-
-type Error struct {
-	Field  string `json:"field"`
-	Reason string `json:"reason"`
-}
-
-type Errors []Error
-
-type ErrorResponse struct {
-	Errors Errors `json:"errors"`
-}
 
 // pathParams returns all chi url params from the request
 func pathParams(r *http.Request) map[string]string {
@@ -34,14 +22,6 @@ func pathParams(r *http.Request) map[string]string {
 		pathParams[name] = rCtx.URLParams.Values[i]
 	}
 	return pathParams
-}
-
-// queryParamLoader handles loading booleans, basic strings and numbers
-func queryParamLoader(param *openapi3.Parameter, values []string) (interface{}, *openapi3.Schema, error) {
-	v := param.Schema.Value
-	var err error
-	var value interface{}
-	return value, v, err
 }
 
 func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationInput {
@@ -56,9 +36,11 @@ func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationIn
 
 type ErrorHandler func(http.ResponseWriter, *http.Request, error)
 
+type inputKey struct{}
+
 // InputKey is used to get the *openapi3filter.RequestValidationInput{}
 // from a ctx
-var InputKey = struct{}{}
+var InputKey = inputKey{}
 
 func InputFromCTX(ctx context.Context) (*openapi3filter.RequestValidationInput, error) {
 	input, ok := ctx.Value(InputKey).(*openapi3filter.RequestValidationInput)
@@ -69,11 +51,14 @@ func InputFromCTX(ctx context.Context) (*openapi3filter.RequestValidationInput, 
 }
 
 func SetOpenAPIInput(router *openapi3filter.Router, errFn ErrorHandler) func(http.Handler) http.Handler {
+	if router == nil {
+		panic("SetOpenAPIInput got a nil router")
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			route, pathParams, err := router.FindRoute(r.Method, r.URL)
 			if err != nil {
-				errFn(w, r, err)
+				next.ServeHTTP(w, r)
 				return
 			}
 			input := requestValidationInput(r)
@@ -95,7 +80,7 @@ func VerifyRequest(errFn ErrorHandler) func(http.Handler) http.Handler {
 			ctx := r.Context()
 			input, err := InputFromCTX(ctx)
 			if err != nil {
-				errFn(w, r, err)
+				next.ServeHTTP(w, r)
 				return
 			}
 
@@ -147,6 +132,7 @@ func VerifyResponse(errFn ErrorHandler) func(http.Handler) http.Handler {
 
 			input, err := InputFromCTX(r.Context())
 			if err != nil {
+				// next.ServeHTTP(w, r)
 				errFn(w, r, err)
 				return
 			}

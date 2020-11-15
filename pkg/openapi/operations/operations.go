@@ -29,19 +29,32 @@ func Summary(summary string) Option {
 	}
 }
 
+func DefaultJSONResponse(description string, model interface{}) Option {
+	return func(s *openapi3.Swagger, o Operation) Operation {
+		resp := openapi3.NewResponse().WithDescription(description)
+		if model == nil {
+			o.Responses["default"] = &openapi3.ResponseRef{Value: resp}
+			return o
+		}
+
+		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
+		resp = resp.WithContent(openapi3.NewContentWithJSONSchemaRef(schema))
+		o.Responses["default"] = &openapi3.ResponseRef{Value: resp}
+		return o
+	}
+}
+
 func JSONBody(description string, model interface{}) Option {
 	return func(s *openapi3.Swagger, o Operation) Operation {
 		if s.Components.Schemas == nil {
 			s.Components.Schemas = openapi.Schemas{}
 		}
 		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
-		o.RequestBody = &openapi3.RequestBodyRef{
-			Value: &openapi3.RequestBody{
-				Content:     openapi3.NewContentWithJSONSchemaRef(schema),
-				Description: description,
-				Required:    true,
-			},
-		}
+		requestBody := openapi3.NewRequestBody().
+			WithContent(openapi3.NewContentWithJSONSchemaRef(schema)).
+			WithDescription(description).
+			WithRequired(true)
+		o.RequestBody = &openapi3.RequestBodyRef{Value: requestBody}
 		return o
 	}
 }

@@ -41,14 +41,14 @@ var DefaultArgCreators = ArgCreators{
 
 type RequestHandler interface {
 	Error(w http.ResponseWriter, r *http.Request, err error)
-	Success(w http.ResponseWriter, obj interface{})
+	Success(w http.ResponseWriter, r *http.Request, obj interface{})
 }
 
 type ErrorHandler func(http.ResponseWriter, *http.Request, error)
 
 type RequestHandleFns struct {
 	ErrFn     ErrorHandler
-	SuccessFn func(w http.ResponseWriter, response interface{})
+	SuccessFn func(w http.ResponseWriter, r *http.Request, response interface{})
 }
 
 func (h RequestHandleFns) Error(w http.ResponseWriter, r *http.Request, err error) {
@@ -57,9 +57,9 @@ func (h RequestHandleFns) Error(w http.ResponseWriter, r *http.Request, err erro
 	}
 }
 
-func (h RequestHandleFns) Success(w http.ResponseWriter, obj interface{}) {
+func (h RequestHandleFns) Success(w http.ResponseWriter, r *http.Request, obj interface{}) {
 	if h.SuccessFn != nil {
-		h.SuccessFn(w, obj)
+		h.SuccessFn(w, r, obj)
 	}
 }
 
@@ -181,7 +181,7 @@ func HandlerFromFn(fnPtr interface{}, fns RequestHandler, components openapi.Com
 					fns.Error(w, r, err)
 					return
 				} else {
-					fns.Success(w, values[0].Interface())
+					fns.Success(w, r, values[0].Interface())
 				}
 			}
 
@@ -300,42 +300,42 @@ type ReflectRouter struct {
 	handleFns RequestHandleFns
 }
 
-// NewReflectRouter returns a wrapped chi router
-func NewReflectRouter(handleFns RequestHandleFns) *ReflectRouter {
+// NewRouter returns a wrapped chi router
+func NewRouter(handleFns RequestHandleFns) *ReflectRouter {
 	return &ReflectRouter{
 		router.NewRouter(),
 		handleFns,
 	}
 }
 
-func NewReflectRouterWithInfo(info openapi.Info, handleFns RequestHandleFns) *ReflectRouter {
-	r := NewReflectRouter(handleFns)
+func NewRouterWithInfo(info openapi.Info, handleFns RequestHandleFns) *ReflectRouter {
+	r := NewRouter(handleFns)
 	apiInfo := openapi3.Info(info)
 	r.Swagger.Info = &apiInfo
 	return r
 }
 
 // Route mounts a sub-Router along a `pattern`` string.
-func (router *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
-	subRouter := NewReflectRouter(router.handleFns)
+func (r *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
+	subRouter := NewRouter(r.handleFns)
 	if fn != nil {
 		fn(subRouter)
 	}
-	router.Mount(pattern, subRouter)
+	r.Mount(pattern, subRouter)
 }
 
 // Mount attaches another http.Handler along ./pattern/*
-func (router *ReflectRouter) Mount(path string, handler http.Handler) {
+func (r *ReflectRouter) Mount(path string, handler http.Handler) {
 	switch obj := handler.(type) {
 	case *ReflectRouter:
 		for name, item := range obj.Swagger.Paths {
-			router.Swagger.Paths[path+strings.TrimRight(name, "/")] = item
+			r.Swagger.Paths[path+strings.TrimRight(name, "/")] = item
 		}
 		for name, item := range obj.Swagger.Components.Schemas {
-			router.Swagger.Components.Schemas[name] = item
+			r.Swagger.Components.Schemas[name] = item
 		}
 	}
-	router.Router.Mount(path, handler)
+	r.Router.Mount(path, handler)
 }
 
 // MethodFunc adds routes for `pattern` that matches the `method` HTTP method.

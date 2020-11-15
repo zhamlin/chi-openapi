@@ -304,6 +304,92 @@ func TestRouterVerifyResponse(t *testing.T) {
 	}
 }
 
+func TestRouterDefaultResponse(t *testing.T) {
+	type Error struct {
+		Description string `json:"description"`
+	}
+
+	router := NewRouter()
+	router.Get("/", responseHandler, []Option{
+		JSONResponse(http.StatusOK, "OK", nil),
+	})
+	router.Get("/defaultResponse", responseHandler, []Option{
+		JSONResponse(http.StatusOK, "OK", nil),
+		DefaultJSONResponse("default response", nil),
+	})
+
+	r := NewRouter().With(jsonHeader)
+	r.SetDefaultJSON("unexpected error", Error{})
+	r.Mount("/", router)
+
+	spec, err := r.GenerateSpec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = JSONDiff(t, spec, `
+    {
+      "components": {
+        "responses": {
+          "Default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "unexpected error"
+          }
+        },
+        "schemas": {
+          "Error": {
+            "properties": {
+              "description": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
+      },
+      "info": {
+        "title": "Title",
+        "version": "0.0.1"
+      },
+      "openapi": "3.0.0",
+      "paths": {
+        "/": {
+          "get": {
+            "responses": {
+              "200": {
+                "description": "OK"
+              },
+              "default": {
+                "$ref": "#/components/responses/Default"
+              }
+            }
+          }
+        },
+        "/defaultResponse": {
+          "get": {
+            "responses": {
+              "200": {
+                "description": "OK"
+              },
+              "default": {
+                "description": "default response"
+              }
+            }
+          }
+        }
+      }
+    }
+    `)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func BenchmarkRouter(b *testing.B) {
 	dummyR := NewRouter()
 	dummyR.Use(jsonHeader)

@@ -24,11 +24,13 @@ func NewRouter() *Router {
 				Version: "0.0.1",
 				Title:   "Title",
 			},
+			Servers: openapi3.Servers{},
 			OpenAPI: "3.0.0",
 			Paths:   openapi3.Paths{},
 			Components: openapi3.Components{
 				Schemas:    openapi.Schemas{},
 				Parameters: openapi.Parameters{},
+				Responses:  map[string]*openapi3.ResponseRef{},
 			},
 		},
 	}
@@ -41,10 +43,13 @@ func NewRouterWithInfo(info openapi.Info) *Router {
 	return r
 }
 
+// Router is a small wrapper over a chi.Router to help generate an openapi spec
 type Router struct {
-	Mux        chi.Router
-	Swagger    *openapi3.Swagger
-	prefixPath string
+	Mux     chi.Router
+	Swagger *openapi3.Swagger
+
+	prefixPath      string
+	defaultResponse *openapi3.ResponseRef
 }
 
 // Use appends one or more middlewares onto the Router stack.
@@ -67,26 +72,49 @@ func (r *Router) With(middlewares ...func(http.Handler) http.Handler) *Router {
 // }
 
 // Route mounts a sub-Router along a `pattern`` string.
-func (router *Router) Route(pattern string, fn func(*Router)) {
+func (r *Router) Route(pattern string, fn func(*Router)) {
 	subRouter := NewRouter()
 	if fn != nil {
 		fn(subRouter)
 	}
-	router.Mount(pattern, subRouter)
+	r.Mount(pattern, subRouter)
+}
+
+func (r *Router) setDefaultResp(o *openapi3.Operation) {
+	if r.defaultResponse == nil {
+		return
+	}
+
+	// don't override an already set default response
+	if _, has := o.Responses["default"]; has {
+		return
+	}
+
+	o.Responses["default"] = &openapi3.ResponseRef{
+		Ref:   "#/components/responses/Default",
+		Value: r.defaultResponse.Value,
+	}
 }
 
 // Mount attaches another http.Handler along ./pattern/*
-func (router *Router) Mount(path string, handler http.Handler) {
+func (r *Router) Mount(path string, handler http.Handler) {
 	switch obj := handler.(type) {
 	case *Router:
 		for name, item := range obj.Swagger.Paths {
-			router.Swagger.Paths[path+strings.TrimRight(name, "/")] = item
+			for _, op := range item.Operations() {
+				r.setDefaultResp(op)
+			}
+
+			r.Swagger.Paths[path+strings.Trim(name, "/")] = item
 		}
 		for name, item := range obj.Swagger.Components.Schemas {
-			router.Swagger.Components.Schemas[name] = item
+			r.Swagger.Components.Schemas[name] = item
+		}
+		for name, item := range obj.Swagger.Components.Responses {
+			r.Swagger.Components.Responses[name] = item
 		}
 	}
-	router.Mux.Mount(path, handler)
+	r.Mux.Mount(path, handler)
 }
 
 func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +132,8 @@ func (r *Router) MethodFunc(method, path string, handler http.HandlerFunc, optio
 	for _, option := range options {
 		o = option(r.Swagger, o)
 	}
+
+	r.setDefaultResp(&o.Operation)
 
 	path = r.prefixPath + path
 	r.Mux.MethodFunc(method, path, handler)
@@ -158,28 +188,6 @@ func (r *Router) ValidateSpec() error {
 	return r.Swagger.Validate(context.Background())
 }
 
-// ServeSpec generates and validates the routers openapi spec.
-// A route with the path supplied will return the spec on GET requests.
-func (r *Router) ServeSpec(path string) error {
-	if err := r.ValidateSpec(); err != nil {
-		return err
-	}
-
-	spec, err := r.GenerateSpec()
-	if err != nil {
-		return err
-	}
-
-	r.Get(path, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Content-Type", "application/json")
-		w.WriteHeader(200)
-		w.Write([]byte(spec))
-	}, operations.Options{
-		operations.JSONResponse(200, "openapi defintion", nil),
-	})
-	return nil
-}
-
 // FilterRouter returns a router used for verifying middlewares
 func (r *Router) FilterRouter() (*openapi3filter.Router, error) {
 	router := openapi3filter.NewRouter()
@@ -201,4 +209,25 @@ func (r *Router) Components() openapi.Components {
 		Schemas:    r.Swagger.Components.Schemas,
 		Parameters: map[reflect.Type]openapi3.Parameters{},
 	}
+}
+
+// SetStatusDefault will set the statusCode for all routes to the supplied object.
+func (r *Router) SetStatusDefault(status int, description string, obj interface{}) {
+	// r.Swagger.Components.Responses
+}
+
+// SetDefaultJSON will set the default response for all routes unless overridden
+// at the operation level
+func (r *Router) SetDefaultJSON(description string, obj interface{}) {
+	if obj == nil {
+		return
+	}
+
+	schema := openapi.SchemaFromObj(obj, r.Swagger.Components.Schemas)
+	resp := openapi3.NewResponse().
+		WithContent(openapi3.NewContentWithJSONSchemaRef(schema)).
+		WithDescription(description)
+
+	r.defaultResponse = &openapi3.ResponseRef{Value: resp}
+	r.Swagger.Components.Responses["Default"] = r.defaultResponse
 }

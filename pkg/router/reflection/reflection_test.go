@@ -78,14 +78,14 @@ func errHandler(t tester) RequestHandleFns {
 		ErrFn: func(_ http.ResponseWriter, _ *http.Request, err error) {
 			t.Log("error", err)
 		},
-		SuccessFn: func(_ http.ResponseWriter, resp interface{}) {
+		SuccessFn: func(_ http.ResponseWriter, _ *http.Request, resp interface{}) {
 			t.Log("response", resp)
 		},
 	}
 }
 
 func routerWithMiddleware(handler interface{}) *ReflectRouter {
-	dummyR := NewReflectRouter(RequestHandleFns{})
+	dummyR := NewRouter(RequestHandleFns{})
 	dummyR.Get("/", handler, []Option{
 		Params(reflectParmas{}),
 		JSONResponse(http.StatusOK, "OK", Response{}),
@@ -101,11 +101,11 @@ func TestReflectionPathParams(t *testing.T) {
 		ErrFn: func(_ http.ResponseWriter, _ *http.Request, err error) {
 			t.Errorf("expected: 'error %s', got: %v", "test", err)
 		},
-		SuccessFn: func(_ http.ResponseWriter, obj interface{}) {
+		SuccessFn: func(_ http.ResponseWriter, _ *http.Request, obj interface{}) {
 			t.Logf("%+v\n", obj)
 		},
 	}
-	dummyR := NewReflectRouter(fns)
+	dummyR := NewRouter(fns)
 	dummyR.Get("/path_param/{some_id}", func(ctx context.Context, param pathParam) (Response, error) {
 		t.Logf("%+v\n", param)
 		return Response{}, nil
@@ -119,7 +119,7 @@ func TestReflectionPathParams(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := NewReflectRouter(RequestHandleFns{})
+	r := NewRouter(RequestHandleFns{})
 	r.Use(jsonHeader)
 	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
 	r.UseRouter(dummyR)
@@ -141,7 +141,7 @@ func TestReflectionPathParams(t *testing.T) {
 }
 
 func TestReflectionFuncReturns(t *testing.T) {
-	dummyR := NewReflectRouter(RequestHandleFns{})
+	dummyR := NewRouter(RequestHandleFns{})
 	dummyR.Get("/multi_return", func(ctx context.Context, params reflectParmas) (Response, error) {
 		t.Logf("%+v\n", params)
 		if params.Int < 0 {
@@ -158,7 +158,7 @@ func TestReflectionFuncReturns(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := NewReflectRouter(RequestHandleFns{})
+	r := NewRouter(RequestHandleFns{})
 	r.Use(jsonHeader)
 	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
 	r.UseRouter(dummyR)
@@ -199,7 +199,7 @@ func TestReflectionFuncReturns(t *testing.T) {
 					t.Errorf("expected: 'error %s', got: %v", input.Value, err)
 				}
 			},
-			SuccessFn: func(_ http.ResponseWriter, obj interface{}) {
+			SuccessFn: func(_ http.ResponseWriter, _ *http.Request, obj interface{}) {
 			},
 		}, components)
 		if err != nil {
