@@ -400,6 +400,81 @@ func TestRouterDefaultResponse(t *testing.T) {
 	}
 }
 
+func TestRouterMapComponents(t *testing.T) {
+	type Other struct {
+		String string `json:"string"`
+	}
+	type mapper struct {
+		Map map[string]Other `json:"map"`
+	}
+
+	router := NewRouter()
+	router.Get("/", responseHandler, []Option{
+		JSONResponse(http.StatusOK, "OK", mapper{}),
+	})
+
+	r := NewRouter().With(jsonHeader)
+	r.Mount("/", router)
+
+	spec, err := r.GenerateSpec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = JSONDiff(t, spec, `
+    {
+      "components": {
+        "schemas": {
+          "Other": {
+            "properties": {
+              "string": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "mapper": {
+            "properties": {
+              "map": {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/Other"
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        }
+      },
+      "info": {
+        "title": "Title",
+        "version": "0.0.1"
+      },
+      "openapi": "3.0.0",
+      "paths": {
+        "/": {
+          "get": {
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/mapper"
+                    }
+                  }
+                },
+                "description": "OK"
+              }
+            }
+          }
+        }
+      }
+    }
+    `)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func BenchmarkRouter(b *testing.B) {
 	dummyR := NewRouter()
 	dummyR.Use(jsonHeader)

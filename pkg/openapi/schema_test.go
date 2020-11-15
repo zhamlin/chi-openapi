@@ -520,3 +520,67 @@ func TestSchemaArrays(t *testing.T) {
 		})
 	}
 }
+
+func TestSchemaMaps(t *testing.T) {
+	tests := []struct {
+		name     string
+		schemas  bool
+		expected string
+		obj      interface{}
+	}{
+		{
+			name: "basic map",
+			obj: struct {
+				Map map[string]interface{} `json:"map"`
+			}{},
+			expected: `
+            {
+              "properties": {
+                "map": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object"
+                  }
+                }
+              },
+              "type": "object"
+            }
+        `},
+		{
+			name: "string map",
+			obj: struct {
+				Map map[string]string `json:"map"`
+			}{},
+			expected: `
+            {
+              "properties": {
+                "map": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+        `},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var schemas openapi.Schemas = nil
+			if test.schemas {
+				schemas = openapi.Schemas{}
+			}
+			schema := openapi.SchemaFromObj(test.obj, schemas)
+			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
+				t.Error(err)
+				if test.schemas {
+					for name, schema := range schemas {
+						t.Logf("%v: %+v\n", name, JSONT(t, schema))
+					}
+				}
+			}
+		})
+	}
+}

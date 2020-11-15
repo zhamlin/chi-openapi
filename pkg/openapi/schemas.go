@@ -131,6 +131,17 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 		} else {
 			schema.Items = schemaFromType(typ.Elem(), nil, schemas)
 		}
+	case reflect.Map:
+		// only support maps with string keys
+		if typ.Key().Kind() == reflect.String {
+			schema.Type = "object"
+
+			if obj != nil {
+				newObj := reflect.New(typ.Elem()).Elem().Interface()
+				schema.AdditionalProperties = schemaFromType(typ.Elem(), newObj, schemas)
+			}
+		}
+
 	case reflect.Struct:
 		// handle special structs
 		inline := false
@@ -213,7 +224,10 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 				panic(err)
 			}
 		}
-		schema.Properties[name] = s
+
+		if !s.Value.IsEmpty() {
+			schema.Properties[name] = s
+		}
 	}
 
 	schema.Required = requiredFields
