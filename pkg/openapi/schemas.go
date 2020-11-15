@@ -119,7 +119,10 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 		schema.Format = "int64"
 		schema.Type = "integer"
 	case reflect.Ptr:
-		// TODO: handle pointers correctly, they should be optional
+		if obj != nil {
+			newObj := reflect.New(typ.Elem()).Elem().Interface()
+			return schemaFromType(typ.Elem(), newObj, schemas)
+		}
 	case reflect.Slice, reflect.Array:
 		schema.Type = "array"
 		if obj != nil {
