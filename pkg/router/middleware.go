@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/felixge/httpsnoop"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi"
 )
@@ -109,37 +110,33 @@ func VerifyRequest(errFn ErrorHandler) func(http.Handler) http.Handler {
 	}
 }
 
-type responseWriter struct {
-	body       []byte
-	statusCode int
-	header     http.Header
-}
-
-func (w *responseWriter) Header() http.Header {
-	return w.header
-}
-
-func (w *responseWriter) WriteHeader(statusCode int) {
-	w.statusCode = statusCode
-}
-
-func (w *responseWriter) Write(b []byte) (int, error) {
-	if w.statusCode == 0 {
-		w.statusCode = http.StatusOK
-	}
-	w.body = b
-	return len(w.body), nil
-}
-
 // VerifyResponse validates response against matching openapi routes
 // Requires SetOpenAPIInput middleware to have been called
 func VerifyResponse(errFn ErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rw := &responseWriter{
-				header: w.Header(),
-			}
-			next.ServeHTTP(rw, r)
+			responseBody := &bytes.Buffer{}
+			statusCode := 0
+			wrapped := httpsnoop.Wrap(w, httpsnoop.Hooks{
+				WriteHeader: func(next httpsnoop.WriteHeaderFunc) httpsnoop.WriteHeaderFunc {
+					return func(code int) {
+						statusCode = code
+					}
+				},
+				Write: func(next httpsnoop.WriteFunc) httpsnoop.WriteFunc {
+					return func(p []byte) (int, error) {
+						_, err := responseBody.Write(p)
+						if err != nil {
+							return -1, err
+						}
+						if statusCode == 0 {
+							statusCode = http.StatusOK
+						}
+						return 0, nil
+					}
+				},
+			})
+			next.ServeHTTP(wrapped, r)
 
 			input, err := InputFromCTX(r.Context())
 			if err != nil {
@@ -149,27 +146,27 @@ func VerifyResponse(errFn ErrorHandler) func(http.Handler) http.Handler {
 			}
 
 			responseInput := &openapi3filter.ResponseValidationInput{
-				Header: rw.header,
-				Status: rw.statusCode,
+				Header: wrapped.Header(),
+				Status: statusCode,
 				Options: &openapi3filter.Options{
 					IncludeResponseStatus: true,
 				},
 				RequestValidationInput: input,
 			}
-			responseInput.SetBodyBytes(rw.body)
+			responseInput.SetBodyBytes(responseBody.Bytes())
 
 			err = openapi3filter.ValidateResponse(r.Context(), responseInput)
 			if err != nil {
 				errFn(w, r, err)
 				return
 			}
-			for name, value := range rw.Header() {
+			for name, value := range wrapped.Header() {
 				for _, v := range value {
 					w.Header().Add(name, v)
 				}
 			}
-			w.WriteHeader(rw.statusCode)
-			w.Write(rw.body)
+			w.WriteHeader(statusCode)
+			w.Write(responseBody.Bytes())
 		})
 	}
 }
