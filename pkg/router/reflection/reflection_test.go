@@ -31,6 +31,7 @@ func jsonHeader(next http.Handler) http.Handler {
 type tester interface {
 	Error(args ...interface{})
 	Log(args ...interface{})
+	Logf(msg string, args ...interface{})
 }
 
 func errorHandler(t tester) func(http.ResponseWriter, *http.Request, error) {
@@ -41,6 +42,7 @@ func errorHandler(t tester) func(http.ResponseWriter, *http.Request, error) {
 				return
 			}
 		}
+		t.Logf("%t\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
@@ -48,7 +50,7 @@ func errorHandler(t tester) func(http.ResponseWriter, *http.Request, error) {
 func dummyHandler(_ http.ResponseWriter, _ *http.Request) {}
 
 type Response struct {
-	String string    `json:"string"`
+	String string    `json:"string" nullable:"true"`
 	Int    int       `json:"int" min:"3"`
 	Date   time.Time `json:"date"`
 }
@@ -251,7 +253,12 @@ func TestReflectionFuncBody(t *testing.T) {
 
 func TestReflectionHandler(t *testing.T) {
 	reflectionHandler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("{}"))
+		input := Response{Int: 3}
+		data, err := json.Marshal(&input)
+		if err != nil {
+			t.Error(err)
+		}
+		w.Write([]byte(data))
 	}
 
 	dummyR := router.NewRouter()

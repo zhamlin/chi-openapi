@@ -4,31 +4,12 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
 type Schemas map[string]*openapi3.SchemaRef
-
-func (s Schemas) Inject(schema *openapi3.SchemaRef) *openapi3.SchemaRef {
-	if schema.Ref != "" {
-		name := strings.TrimLeft(schema.Ref, componentSchemasPath)
-		if obj, has := s[name]; has {
-			return s.Inject(obj)
-		}
-	}
-	if val := schema.Value; val != nil {
-		if val.Items != nil {
-			val.Items = s.Inject(val.Items)
-		}
-		for name, ref := range val.Properties {
-			val.Properties[name] = s.Inject(ref)
-		}
-	}
-	return schema
-}
 
 // SchemaFromObj returns an openapi3 schema for the object.
 // For paramters, use ParamsFromObj.
@@ -74,6 +55,8 @@ func timeSchema() *openapi3.Schema {
 	return schema
 }
 
+var stringerType = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
+
 func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi3.SchemaRef {
 	schema := openapi3.NewSchema()
 	name := getTypeName(typ)
@@ -86,6 +69,24 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 				Value: obj.Value,
 			}
 		}
+	}
+
+	// custom enumer function, returns an array of its enum types
+	if m, has := typ.MethodByName("EnumValues"); has {
+		types := m.Func.Call([]reflect.Value{reflect.ValueOf(obj)})
+		if len(types) == 1 && types[0].Kind() == reflect.Slice {
+			val := types[0]
+			for i := 0; i < val.Len(); i++ {
+				v := val.Index(i)
+				if v.Type().Implements(stringerType) {
+					stringer := v.Interface().(fmt.Stringer)
+					schema.Enum = append(schema.Enum, stringer.String())
+				}
+			}
+		}
+		// only support one type of enum
+		schema.Type = "string"
+		return openapi3.NewSchemaRef("", schema)
 	}
 
 	switch typ {
@@ -187,8 +188,16 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 		}
 		name := val
 
+		// allow required to be explicitly set
 		if val, ok := field.Tag.Lookup("required"); ok {
 			if tagBoolValue(val) {
+				requiredFields = append(requiredFields, name)
+			}
+		} else {
+			// by default everything except pointer types will be required
+			switch field.Type.Kind() {
+			case reflect.Ptr:
+			default:
 				requiredFields = append(requiredFields, name)
 			}
 		}

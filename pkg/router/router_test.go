@@ -80,7 +80,12 @@ func TestRouterSimpleRoutes(t *testing.T) {
                 "type": "string"
               }
             },
-            "type": "object"
+            "type": "object",
+            "required": [
+                "string",
+                "int",
+                "date"
+            ]
           }
         }
       },
@@ -352,7 +357,10 @@ func TestRouterDefaultResponse(t *testing.T) {
                 "type": "string"
               }
             },
-            "type": "object"
+            "type": "object",
+              "required": [
+                  "description"
+              ]
           }
         }
       },
@@ -430,7 +438,10 @@ func TestRouterMapComponents(t *testing.T) {
                 "type": "string"
               }
             },
-            "type": "object"
+            "type": "object",
+            "required": [
+              "string"
+            ]
           },
           "mapper": {
             "properties": {
@@ -441,7 +452,10 @@ func TestRouterMapComponents(t *testing.T) {
                 "type": "object"
               }
             },
-            "type": "object"
+            "type": "object",
+            "required": [
+              "map"
+            ]
           }
         }
       },

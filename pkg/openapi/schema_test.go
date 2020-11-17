@@ -43,7 +43,10 @@ func TestSchema(t *testing.T) {
                   "type": "string"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "name"
+              ]
             }
         `},
 		{
@@ -58,7 +61,10 @@ func TestSchema(t *testing.T) {
                   "type": "string"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "name"
+              ]
             }
         `},
 		{
@@ -76,7 +82,10 @@ func TestSchema(t *testing.T) {
                   "$ref": "#/components/schemas/ref1"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "data"
+              ]
             }
         `},
 		{
@@ -90,7 +99,10 @@ func TestSchema(t *testing.T) {
                   "type": "object"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "data"
+              ]
             }
         `},
 		{
@@ -109,7 +121,10 @@ func TestSchema(t *testing.T) {
                   "type": "array"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "data"
+              ]
             }
         `},
 		{
@@ -143,7 +158,10 @@ func TestSchema(t *testing.T) {
                   "type": "integer"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "random"
+              ]
             }
         `},
 		{
@@ -158,7 +176,10 @@ func TestSchema(t *testing.T) {
                   "type": "boolean"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "truthy"
+              ]
             }
         `},
 	}
@@ -202,7 +223,10 @@ func TestSchemaNumberFormats(t *testing.T) {
                   "format": "int32"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "number"
+              ]
             }
         `},
 		{
@@ -218,7 +242,10 @@ func TestSchemaNumberFormats(t *testing.T) {
                   "format": "int64"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "number"
+              ]
             }
         `},
 		{
@@ -233,7 +260,10 @@ func TestSchemaNumberFormats(t *testing.T) {
                   "type": "integer"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "number"
+              ]
             }
         `},
 		{
@@ -249,7 +279,10 @@ func TestSchemaNumberFormats(t *testing.T) {
                   "format": "float"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "number"
+              ]
             }
         `},
 		{
@@ -265,7 +298,10 @@ func TestSchemaNumberFormats(t *testing.T) {
                   "format": "float"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "number"
+              ]
             }
         `},
 	}
@@ -308,7 +344,10 @@ func TestSchemaStringFormats(t *testing.T) {
                   "type": "string"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "string"
+              ]
             }
         `},
 		{
@@ -325,7 +364,10 @@ func TestSchemaStringFormats(t *testing.T) {
                   "minLength": 1
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "string"
+              ]
             }
         `},
 		{
@@ -341,7 +383,10 @@ func TestSchemaStringFormats(t *testing.T) {
                   "format": "email"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "string"
+              ]
             }
         `},
 		{
@@ -357,7 +402,10 @@ func TestSchemaStringFormats(t *testing.T) {
                   "format": "date-time"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "date"
+              ]
             }
         `},
 		{
@@ -373,7 +421,10 @@ func TestSchemaStringFormats(t *testing.T) {
                   "format": "date"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "date"
+              ]
             }
         `},
 		{
@@ -389,7 +440,10 @@ func TestSchemaStringFormats(t *testing.T) {
                   "pattern": "^\\d{3}-\\d{2}-\\d{4}$"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "string"
+              ]
             }
         `},
 	}
@@ -413,8 +467,6 @@ func TestSchemaStringFormats(t *testing.T) {
 	}
 }
 
-type SSN string
-
 func TestSchemaArrays(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -437,7 +489,10 @@ func TestSchemaArrays(t *testing.T) {
                   "type": "array"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "array"
+              ]
             }
         `},
 		{
@@ -456,7 +511,10 @@ func TestSchemaArrays(t *testing.T) {
                   "type": "array"
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "array"
+              ]
             }
         `},
 		{
@@ -477,7 +535,10 @@ func TestSchemaArrays(t *testing.T) {
                   "minItems": 1
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "array"
+              ]
             }
         `},
 		{
@@ -497,7 +558,10 @@ func TestSchemaArrays(t *testing.T) {
                   "uniqueItems": true
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "array"
+              ]
             }
         `},
 	}
@@ -543,7 +607,10 @@ func TestSchemaMaps(t *testing.T) {
                   }
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "map"
+              ]
             }
         `},
 		{
@@ -561,7 +628,91 @@ func TestSchemaMaps(t *testing.T) {
                   }
                 }
               },
-              "type": "object"
+              "type": "object",
+              "required": [
+                  "map"
+              ]
+            }
+        `},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var schemas openapi.Schemas = nil
+			if test.schemas {
+				schemas = openapi.Schemas{}
+			}
+			schema := openapi.SchemaFromObj(test.obj, schemas)
+			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
+				t.Error(err)
+				if test.schemas {
+					for name, schema := range schemas {
+						t.Logf("%v: %+v\n", name, JSONT(t, schema))
+					}
+				}
+			}
+		})
+	}
+}
+
+type Color int
+
+const (
+	Unknown Color = 0
+	Blue    Color = 1
+	Red     Color = 2
+	Green   Color = 3
+)
+
+func (i Color) String() string {
+	switch i {
+	case 0:
+		return "Unknown"
+	case 1:
+		return "Blue"
+	case 2:
+		return "Red"
+	case 3:
+		return "Green"
+	default:
+		return ""
+	}
+}
+
+// EnumValues returns an array of the values of this type
+func (i Color) EnumValues() []Color {
+	return []Color{0, 1, 2, 3}
+}
+
+func TestSchemaEnums(t *testing.T) {
+	tests := []struct {
+		name     string
+		schemas  bool
+		expected string
+		obj      interface{}
+	}{
+		{
+			name: "custom enumer type",
+			obj: struct {
+				Color Color `json:"color"`
+			}{},
+			expected: `
+            {
+              "properties": {
+                "color": {
+                  "enum": [
+                    "Unknown",
+                    "Blue",
+                    "Red",
+                    "Green"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "required": [
+                "color"
+              ]
             }
         `},
 	}
