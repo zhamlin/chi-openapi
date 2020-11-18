@@ -38,16 +38,18 @@ func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationIn
 
 type ErrorHandler func(http.ResponseWriter, *http.Request, error)
 
-type inputKey struct{}
+type ctxKey struct {
+	name string
+}
 
 // InputKey is used to get the *openapi3filter.RequestValidationInput{}
 // from a ctx
-var InputKey = inputKey{}
+var InputKey = ctxKey{"input"}
 
 func InputFromCTX(ctx context.Context) (*openapi3filter.RequestValidationInput, error) {
 	input, ok := ctx.Value(InputKey).(*openapi3filter.RequestValidationInput)
 	if !ok {
-		return input, fmt.Errorf("input not found in context")
+		return input, fmt.Errorf("*openapi3filter.RequestValidationInput not found in context")
 	}
 	return input, nil
 }

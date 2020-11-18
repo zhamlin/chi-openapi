@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -44,9 +45,6 @@ func getTypeName(typ reflect.Type) string {
 	return name
 }
 
-var timeType = reflect.TypeOf(time.Time{})
-var timeKind = timeType.Kind()
-
 func timeSchema() *openapi3.Schema {
 	schema := openapi3.NewSchema()
 	schema.Type = "string"
@@ -55,7 +53,15 @@ func timeSchema() *openapi3.Schema {
 	return schema
 }
 
-var stringerType = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
+type OpenAPIDescriptor interface {
+	OpenAPIDescription() string
+}
+
+var (
+	stringerType          = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
+	openAPIDescriptorType = reflect.TypeOf((*OpenAPIDescriptor)(nil)).Elem()
+	timeType              = reflect.TypeOf(time.Time{})
+)
 
 func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi3.SchemaRef {
 	schema := openapi3.NewSchema()
@@ -69,6 +75,14 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 				Value: obj.Value,
 			}
 		}
+	}
+
+	if typ.Implements(openAPIDescriptorType) {
+		descriptor := reflect.ValueOf(obj).Interface().(OpenAPIDescriptor)
+		description := descriptor.OpenAPIDescription()
+		description = strings.TrimSpace(description)
+		description = strings.Trim(description, "\n")
+		schema.Description = description
 	}
 
 	// custom enumer function, returns an array of its enum types
@@ -156,7 +170,9 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 				inline = b.SchemaInline()
 			}
 		}
-		schema = getSchemaFromStruct(schemas, typ, obj)
+		newSchema := getSchemaFromStruct(schemas, typ, obj)
+		newSchema.Description = schema.Description
+		schema = newSchema
 		if schemas != nil && !inline {
 			schemas[name] = openapi3.NewSchemaRef("", schema)
 			return openapi3.NewSchemaRef(componentSchemasPath+name, schemas[name].Value)
