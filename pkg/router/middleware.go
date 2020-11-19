@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/felixge/httpsnoop"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -60,6 +61,15 @@ func SetOpenAPIInput(router *openapi3filter.Router, errFn ErrorHandler) func(htt
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if r := recover(); r != nil {
+					if err, ok := r.(error); ok {
+						if strings.Contains(err.Error(), "Unsupported HTTP method") {
+							w.WriteHeader(http.StatusMethodNotAllowed)
+						}
+					}
+				}
+			}()
 			route, pathParams, err := router.FindRoute(r.Method, r.URL)
 			if err != nil {
 				var rError *openapi3filter.RouteError

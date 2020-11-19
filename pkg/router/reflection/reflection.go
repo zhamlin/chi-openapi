@@ -10,10 +10,7 @@ import (
 	"reflect"
 
 	"chi-openapi/pkg/openapi"
-	"chi-openapi/pkg/openapi/operations"
 	"chi-openapi/pkg/router"
-
-	"github.com/getkin/kin-openapi/openapi3"
 )
 
 var (
@@ -105,86 +102,14 @@ func HandlerFromFn(fnPtr interface{}, fns RequestHandler, components openapi.Com
 		return nil, fmt.Errorf("expected a function to HandlerFromFn, got: %+v", k)
 	}
 
-	args := []handlerArgType{}
-	hasJSONBody := false
-
-	// find all arguments
-	for i := 0; i < typ.NumIn(); i++ {
-		arg := typ.In(i)
-		if _, has := creators[arg]; has {
-			args = append(args, handlerArgType{arg, argTypeOther})
-			continue
-		}
-		if components.Schemas != nil {
-			_, has := components.Schemas[arg.Name()]
-			if has && hasJSONBody {
-				return nil, fmt.Errorf("multiple json body values per handler not allowed")
-			}
-			if has {
-				args = append(args, handlerArgType{arg, argTypeJSONBody})
-				hasJSONBody = true
-				continue
-			}
-		}
-		if arg.Kind() != reflect.Struct {
-			return nil, fmt.Errorf("no way of creating type: %+v", arg)
-		}
-		paramList, has := components.Parameters[arg]
-		if !has {
-			var err error
-			paramList, err = openapi.ParamsFromType(arg, reflect.Value{})
-			if err != nil {
-				return nil, err
-			}
-			components.Parameters[arg] = paramList
-		}
-		args = append(args, handlerArgType{arg, argTypeParam})
+	args, err := getArgs(typ, components, creators)
+	if err != nil {
+		return nil, err
 	}
 
-	// verify correct return
-	returnCount := typ.NumOut()
-	returnTypes := []reflect.Type{}
-	returnHandlerFn := func(http.ResponseWriter, *http.Request, []reflect.Value) {}
-	if returnCount > 0 {
-		if returnCount > 2 {
-			return nil, fmt.Errorf("expected at most 2 returns, got: %v", returnCount)
-		}
-
-		for i := 0; i < returnCount; i++ {
-			returnTypes = append(returnTypes, typ.Out(i))
-		}
-		// make sure the last return type is an error
-		if lastError := returnTypes[len(returnTypes)-1]; lastError != errType {
-			return nil, fmt.Errorf("expected the last return type to be an error, got: %+v", lastError)
-		}
-
-		getErr := func(values []reflect.Value, i int) error {
-			e, ok := values[i].Interface().(error)
-			if ok {
-				return e
-			}
-			return nil
-		}
-
-		switch returnCount {
-		case 1:
-			returnHandlerFn = func(w http.ResponseWriter, r *http.Request, values []reflect.Value) {
-				if err := getErr(values, 0); err != nil {
-					fns.Error(w, r, err)
-					return
-				}
-			}
-		case 2:
-			returnHandlerFn = func(w http.ResponseWriter, r *http.Request, values []reflect.Value) {
-				if err := getErr(values, 1); err != nil {
-					fns.Error(w, r, err)
-					return
-				} else {
-					fns.Success(w, r, values[0].Interface())
-				}
-			}
-
-		}
+	returnHandlerFn, err := createInjectedHandlerFn(typ, fns)
+	if err != nil {
+		return nil, err
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -294,98 +219,96 @@ func HandlerFromFnDefault(fnPtr interface{}, fns RequestHandleFns, components op
 	return HandlerFromFn(fnPtr, fns, components, DefaultArgCreators)
 }
 
-type ReflectRouter struct {
-	*router.Router
-	handleFns RequestHandleFns
-}
+type injectedHandler func(http.ResponseWriter, *http.Request, []reflect.Value)
 
-// NewRouter returns a wrapped chi router
-func NewRouter(handleFns RequestHandleFns) *ReflectRouter {
-	return &ReflectRouter{
-		router.NewRouter(),
-		handleFns,
+// createInjectedHandlerFn checks the return values of the http handler and
+// calls either the Error or Success function on the RequestHandler
+func createInjectedHandlerFn(typ reflect.Type, fns RequestHandler) (injectedHandler, error) {
+	// verify correct return
+	returnCount := typ.NumOut()
+	returnTypes := []reflect.Type{}
+	returnHandlerFn := func(http.ResponseWriter, *http.Request, []reflect.Value) {}
+	if returnCount > 0 {
+		if returnCount > 2 {
+			return nil, fmt.Errorf("expected at most 2 returns, got: %v", returnCount)
+		}
+
+		for i := 0; i < returnCount; i++ {
+			returnTypes = append(returnTypes, typ.Out(i))
+		}
+		// make sure the last return type is an error
+		if lastError := returnTypes[len(returnTypes)-1]; lastError != errType {
+			return nil, fmt.Errorf("expected the last return type to be an error, got: %+v", lastError)
+		}
+
+		getErr := func(values []reflect.Value, i int) error {
+			e, ok := values[i].Interface().(error)
+			if ok {
+				return e
+			}
+			return nil
+		}
+
+		switch returnCount {
+		case 1:
+			returnHandlerFn = func(w http.ResponseWriter, r *http.Request, values []reflect.Value) {
+				if err := getErr(values, 0); err != nil {
+					fns.Error(w, r, err)
+					return
+				}
+			}
+		case 2:
+			returnHandlerFn = func(w http.ResponseWriter, r *http.Request, values []reflect.Value) {
+				if err := getErr(values, 1); err != nil {
+					fns.Error(w, r, err)
+					return
+				} else {
+					fns.Success(w, r, values[0].Interface())
+				}
+			}
+
+		}
 	}
+	return returnHandlerFn, nil
 }
 
-func NewRouterWithInfo(info openapi.Info, handleFns RequestHandleFns) *ReflectRouter {
-	r := NewRouter(handleFns)
-	apiInfo := openapi3.Info(info)
-	r.Swagger.Info = &apiInfo
-	return r
-}
+// getArgs checks that it knows how to create what the handler function expects
+// returns a list of the arguments with the location
+func getArgs(typ reflect.Type, components openapi.Components, creators ArgCreators) ([]handlerArgType, error) {
+	args := []handlerArgType{}
+	hasJSONBody := false
 
-// Route mounts a sub-Router along a `pattern`` string.
-func (r *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
-	subRouter := NewRouter(r.handleFns)
-	if fn != nil {
-		fn(subRouter)
+	// find all arguments
+	for i := 0; i < typ.NumIn(); i++ {
+		arg := typ.In(i)
+		if _, has := creators[arg]; has {
+			args = append(args, handlerArgType{arg, argTypeOther})
+			continue
+		}
+		if components.Schemas != nil {
+			_, has := components.Schemas[arg.Name()]
+			if has && hasJSONBody {
+				return nil, fmt.Errorf("multiple json body values per handler not allowed")
+			}
+			if has {
+				args = append(args, handlerArgType{arg, argTypeJSONBody})
+				hasJSONBody = true
+				continue
+			}
+		}
+		if arg.Kind() != reflect.Struct {
+			return args, fmt.Errorf("no way of creating type: %+v", arg)
+		}
+		paramList, has := components.Parameters[arg]
+		if !has {
+			var err error
+			paramList, err = openapi.ParamsFromType(arg, reflect.Value{})
+			if err != nil {
+				return nil, err
+			}
+			components.Parameters[arg] = paramList
+		}
+		args = append(args, handlerArgType{arg, argTypeParam})
 	}
-	r.Mount(pattern, subRouter)
-}
-
-// Mount attaches another http.Handler along ./pattern/*
-func (r *ReflectRouter) Mount(path string, handler http.Handler) {
-	switch obj := handler.(type) {
-	case *ReflectRouter:
-		r.Router.Mount(path, obj.Router)
-	default:
-		r.Router.Mount(path, handler)
-	}
-}
-
-// MethodFunc adds routes for `pattern` that matches the `method` HTTP method.
-func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, options []operations.Option) {
-	o := operations.Operation{}
-	for _, option := range options {
-		option(r.Swagger, o)
-	}
-
-	fn, err := HandlerFromFnDefault(handler, r.handleFns, r.Components())
-	if err != nil {
-		panic(err)
-	}
-	r.Router.MethodFunc(method, path, fn, options)
-}
-
-func (r *ReflectRouter) Get(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodGet, path, handler, options)
-}
-
-func (r *ReflectRouter) Options(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodOptions, path, handler, options)
-}
-
-func (r *ReflectRouter) Connect(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodConnect, path, handler, options)
-}
-
-func (r *ReflectRouter) Trace(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodTrace, path, handler, options)
-}
-
-func (r *ReflectRouter) Post(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodPost, path, handler, options)
-}
-
-func (r *ReflectRouter) Put(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodPut, path, handler, options)
-}
-
-func (r *ReflectRouter) Patch(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodPatch, path, handler, options)
-}
-
-func (r *ReflectRouter) Delete(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodDelete, path, handler, options)
-}
-
-func (r *ReflectRouter) Head(path string, handler interface{}, options []operations.Option) {
-	r.MethodFunc(http.MethodHead, path, handler, options)
-}
-
-// UseRouter copies over the routes and swagger info from the other router.
-func (r *ReflectRouter) UseRouter(other *ReflectRouter) *ReflectRouter {
-	r.Swagger.Info = other.Swagger.Info
-	r.Mount("/", other)
-	return r
+	return args, nil
 }

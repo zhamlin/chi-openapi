@@ -61,6 +61,7 @@ var (
 	stringerType          = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
 	openAPIDescriptorType = reflect.TypeOf((*OpenAPIDescriptor)(nil)).Elem()
 	timeType              = reflect.TypeOf(time.Time{})
+	schemaInlineType      = reflect.TypeOf((*SchemaInline)(nil)).Elem()
 )
 
 func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi3.SchemaRef {
@@ -160,15 +161,11 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 	case reflect.Struct:
 		// handle special structs
 		inline := false
-		{
-			// check to see if the we should inline this schema via the SchemaInline method
-			schemaInterface := reflect.TypeOf((*SchemaInline)(nil)).Elem()
-			if typ.Implements(schemaInterface) {
-				objPtr := reflect.New(typ)
-
-				b := objPtr.Elem().Interface().(SchemaInline)
-				inline = b.SchemaInline()
-			}
+		// check to see if the we should inline this schema via the SchemaInline method
+		if typ.Implements(schemaInlineType) {
+			objPtr := reflect.New(typ)
+			b := objPtr.Elem().Interface().(SchemaInline)
+			inline = b.SchemaInline()
 		}
 		newSchema := getSchemaFromStruct(schemas, typ, obj)
 		newSchema.Description = schema.Description
