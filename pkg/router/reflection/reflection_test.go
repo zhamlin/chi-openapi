@@ -1,4 +1,4 @@
-package router
+package reflection
 
 import (
 	"bytes"
@@ -32,6 +32,7 @@ type tester interface {
 	Error(args ...interface{})
 	Log(args ...interface{})
 	Logf(msg string, args ...interface{})
+	Fatal(args ...interface{})
 }
 
 func errorHandler(t tester) func(http.ResponseWriter, *http.Request, error) {
