@@ -96,9 +96,9 @@ func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Comp
 			return
 		}
 
-		// return the success if we have one or two returns
-		switch typ.NumOut() {
-		case 1, 2:
+		// only time we have two returns is when the func
+		// is returning a success object and an error
+		if typ.NumOut() == 2 {
 			fns.Success(w, r, result)
 		}
 	}, nil
