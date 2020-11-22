@@ -414,3 +414,45 @@ func BenchmarkReflectionQueryParams(b *testing.B) {
 		}
 	})
 }
+
+func TestRouteMiddleware(t *testing.T) {
+	fns := RequestHandleFns{
+		ErrFn: func(_ http.ResponseWriter, _ *http.Request, err error) {
+			t.Fatal(err)
+		},
+		SuccessFn: func(_ http.ResponseWriter, _ *http.Request, obj interface{}) {
+			t.Logf("%+v\n", obj)
+		},
+	}
+	dummyR := NewRouter(fns)
+	dummyR.Get("/", func(r *http.Request, ctx context.Context) error {
+		if v, ok := r.Context().Value("test").(string); !ok || v != "test" {
+			return fmt.Errorf("expected test, got: '%v'", v)
+		}
+		return nil
+	}, []Option{}, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			newCtx := context.WithValue(ctx, "test", "test")
+			next.ServeHTTP(w, r.WithContext(newCtx))
+		})
+	},
+		func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx := r.Context()
+				// test and make sure this middleware gets called second
+				if _, ok := ctx.Value("test").(string); !ok {
+					newCtx := context.WithValue(ctx, "test", "second-func")
+					r = r.WithContext(newCtx)
+				}
+				next.ServeHTTP(w, r)
+			})
+		},
+	)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Add("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	dummyR.ServeHTTP(w, req)
+}

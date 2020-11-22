@@ -168,10 +168,6 @@ func (c *container) Provide(fn interface{}) error {
 }
 
 // Execute will try and call the function with all of the arguments.
-// Will need a value to container the already created values,
-// this will prevent one func being called multiple times.
-// Probably should have that passed directly to this, and maybe even returned.
-// Would allow the caller to choose whether or not they want a new value
 func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, error) {
 	val := reflect.ValueOf(fn)
 	typ := val.Type()

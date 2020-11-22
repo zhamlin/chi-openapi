@@ -159,6 +159,11 @@ func getArgs(typ reflect.Type, components openapi.Components) (*container, error
 			return nil, fmt.Errorf("no way of creating type: %+v", arg)
 		}
 
+		// TODO: check each field on this struct and try and load:;
+		// 1. Any query params
+		// 2. Any other type we know how to handle
+		// 3. Any other type that the container knows how to create
+
 		// it must be a parameter
 		fn, err := createParamLoadFunc(arg, components)
 		if err != nil {
