@@ -174,9 +174,12 @@ func VerifyResponse(errFn ErrorHandler) func(http.Handler) http.Handler {
 				errFn(w, r, err)
 				return
 			}
+			h := w.Header()
 			for name, value := range wrapped.Header() {
 				for _, v := range value {
-					w.Header().Add(name, v)
+					if _, has := h[name]; !has {
+						h.Add(name, v)
+					}
 				}
 			}
 			w.WriteHeader(statusCode)
