@@ -100,6 +100,14 @@ type container struct {
 	Graph graph
 }
 
+func (c *container) HasType(t reflect.Type) bool {
+	_, has := c.Graph.Verticies[t]
+	return has
+}
+
+// Provide adds the return types of the function as
+// vertices on a graph and attempts to add edges
+// based on the arguments of the function
 func (c *container) Provide(fn interface{}) error {
 	typ := reflect.TypeOf(fn)
 	if typ.Kind() != reflect.Func {
@@ -179,11 +187,18 @@ func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, er
 			}
 		}
 	}
-	return c.execute(val, errLocation, args...)
+	values, err := c.execute(val, errLocation, args...)
+	if err != nil {
+		return nil, err
+	}
+	if l := len(values); l > 0 {
+		return values[0].Interface(), nil
+	}
+	return nil, nil
 }
 
-// findError removes any empty errors if any, or returns an error if found
-// expects an errLocation so it knows where to check
+// findError removes any empty errors if any, or returns an error if found.
+// expects an errLocation so it knows where to check for the error
 func findError(errLoc int, values []reflect.Value) ([]reflect.Value, error) {
 	if errLoc < 0 {
 		return values, nil
@@ -212,12 +227,23 @@ func (c container) execute(fn reflect.Value, errLocation int, args ...interface{
 	vals := []reflect.Value{}
 	if typ.NumIn() == 0 {
 		results := fn.Call([]reflect.Value{})
-		// swap return values with passed in value, if any
+		// swap return values with passed in value if any
+		// if this function returns errors, ignore them because
+		// we are directly inserting that value
 		for _, arg := range args {
+			argType := reflect.TypeOf(arg)
 			for i := 0; i < len(results); i++ {
-				if results[i].Type() == reflect.TypeOf(arg) {
+				rType := results[i].Type()
+				// fmt.Printf("%v | %v %v\n", typ, rType, argType)
+				if rType == argType || argType.AssignableTo(rType) {
 					results[i] = reflect.ValueOf(arg)
-					break
+					// remove the error, we aren't using this function
+					if errLocation > -1 {
+						results = append(results[:errLocation], results[errLocation+1:]...)
+					}
+					return results, nil
+					// TODO: might need to set a boolean, and exit right before the find error
+					// break
 				}
 			}
 		}
@@ -231,7 +257,9 @@ func (c container) execute(fn reflect.Value, errLocation int, args ...interface{
 		// whether or not this type was explicitly passed to execute
 		providedType := false
 		for _, arg := range args {
-			if t == reflect.TypeOf(arg) {
+			argType := reflect.TypeOf(arg)
+			// fmt.Printf("%v %v\n", t, argType)
+			if t == argType || argType.AssignableTo(t) {
 				createArgs = append(createArgs, reflect.ValueOf(arg))
 				vals = append(vals, reflect.ValueOf(arg))
 				providedType = true

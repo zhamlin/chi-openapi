@@ -110,7 +110,9 @@ func TestReflectionPathParams(t *testing.T) {
 	}
 	dummyR := NewRouter(fns)
 	dummyR.Get("/path_param/{some_id}", func(ctx context.Context, param pathParam) (Response, error) {
-		t.Logf("%+v\n", param)
+		if param.ID != "20" {
+			t.Fatalf("expected an id of 20, got: %v", param.ID)
+		}
 		return Response{}, nil
 	}, []Option{
 		Params(pathParam{}),
@@ -124,7 +126,18 @@ func TestReflectionPathParams(t *testing.T) {
 
 	r := NewRouter(RequestHandleFns{})
 	r.Use(jsonHeader)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatal(r)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	})
 	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
+
 	r.UseRouter(dummyR)
 	components := r.Components()
 

@@ -67,6 +67,8 @@ func SetOpenAPIInput(router *openapi3filter.Router, errFn ErrorHandler) func(htt
 						if strings.Contains(err.Error(), "Unsupported HTTP method") {
 							w.WriteHeader(http.StatusMethodNotAllowed)
 						}
+					} else {
+						panic(r)
 					}
 				}
 			}()
