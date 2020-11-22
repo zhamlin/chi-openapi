@@ -57,19 +57,18 @@ func (h RequestHandleFns) Success(w http.ResponseWriter, r *http.Request, obj in
 // any errors during the http.Handler
 // All arguments will be automatically created and supplied to the function.
 // Only loads params and one json body schema in the components.
-func HandlerFromFn(fnPtr interface{}, fns RequestHandler, components openapi.Components) (http.HandlerFunc, error) {
-	if fnPtr == nil {
+func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Components, c *container) (http.HandlerFunc, error) {
+	if fptr == nil {
 		return nil, fmt.Errorf("received a nil value for the fnPtr to HandlerFromFn")
 	}
-	if handler, ok := fnPtr.(http.HandlerFunc); ok {
+	if handler, ok := fptr.(http.HandlerFunc); ok {
 		return handler, nil
 	}
-	if handler, ok := fnPtr.(http.Handler); ok {
+	if handler, ok := fptr.(http.Handler); ok {
 		return handler.ServeHTTP, nil
 	}
 
-	val := reflect.ValueOf(fnPtr)
-	typ := val.Type()
+	typ := reflect.TypeOf(fptr)
 
 	// make sure func has the right amount of return values
 	returnCount := typ.NumOut()
@@ -87,12 +86,11 @@ func HandlerFromFn(fnPtr interface{}, fns RequestHandler, components openapi.Com
 		return nil, fmt.Errorf("expected a function to HandlerFromFn, got: %+v", k)
 	}
 
-	container, err := getArgs(typ, components)
-	if err != nil {
+	if err := loadArgsIntoContainer(c, typ, components); err != nil {
 		return nil, err
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		result, err := container.Execute(fnPtr, w, r, r.Context())
+		result, err := c.Execute(fptr, w, r, r.Context())
 		if err != nil {
 			fns.Error(w, r, err)
 			return
@@ -107,14 +105,12 @@ func HandlerFromFn(fnPtr interface{}, fns RequestHandler, components openapi.Com
 }
 
 func HandlerFromFnDefault(fnPtr interface{}, fns RequestHandleFns, components openapi.Components) (http.HandlerFunc, error) {
-	return HandlerFromFn(fnPtr, fns, components)
+	return HandlerFromFn(fnPtr, fns, components, NewContainer())
 }
 
-// getArgs checks that it knows how to create what the handler function expects
+// loadArgsIntoContainer checks that it knows how to create what the handler function expects
 // returns a list of the arguments with the location
-func getArgs(typ reflect.Type, components openapi.Components) (*container, error) {
-	container := NewContainer()
-
+func loadArgsIntoContainer(container *container, typ reflect.Type, components openapi.Components) error {
 	// dummy providers, these will be overridden when the container
 	// is Executed
 	container.Provide(func() (http.ResponseWriter, error) {
@@ -140,23 +136,23 @@ func getArgs(typ reflect.Type, components openapi.Components) (*container, error
 		if components.Schemas != nil {
 			schema, has := components.Schemas[arg.Name()]
 			if has && hasJSONBody {
-				return nil, fmt.Errorf("multiple json body values per handler not allowed")
+				return fmt.Errorf("multiple json body values per handler not allowed")
 			}
 			if has {
 				hasJSONBody = true
 				fn := createJSONBodyLoadFunc(arg, schema)
 				if !fn.IsValid() || fn.IsZero() {
-					return nil, fmt.Errorf("failed to create the load func for: %v", arg)
+					return fmt.Errorf("failed to create the load func for: %v", arg)
 				}
 				if err := container.Provide(fn.Interface()); err != nil {
-					return nil, err
+					return err
 				}
 				continue
 			}
 		}
 
 		if arg.Kind() != reflect.Struct {
-			return nil, fmt.Errorf("no way of creating type: %+v", arg)
+			return fmt.Errorf("no way of creating type: %+v", arg)
 		}
 
 		// TODO: check each field on this struct and try and load:;
@@ -167,16 +163,16 @@ func getArgs(typ reflect.Type, components openapi.Components) (*container, error
 		// it must be a parameter
 		fn, err := createParamLoadFunc(arg, components)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := container.Provide(fn.Interface()); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	// sanity check, make sure there aren't any cyclic dependencies
 	_, err := container.Graph.Sort()
-	return container, err
+	return err
 }
 
 // createParamLoadFunc creates a function that can create the type passed in

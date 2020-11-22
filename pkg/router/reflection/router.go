@@ -14,13 +14,15 @@ type middleware func(next http.Handler) http.Handler
 type ReflectRouter struct {
 	*router.Router
 	handleFns RequestHandleFns
+	c         *container
 }
 
 // NewRouter returns a wrapped chi router
 func NewRouter(handleFns RequestHandleFns) *ReflectRouter {
 	return &ReflectRouter{
-		router.NewRouter(),
-		handleFns,
+		Router:    router.NewRouter(),
+		handleFns: handleFns,
+		c:         NewContainer(),
 	}
 }
 
@@ -28,6 +30,17 @@ func NewRouterWithInfo(info openapi.Info, handleFns RequestHandleFns) *ReflectRo
 	r := NewRouter(handleFns)
 	apiInfo := openapi3.Info(info)
 	r.Swagger.Info = &apiInfo
+	return r
+}
+
+func (r *ReflectRouter) Provide(fptr interface{}) error {
+	return r.c.Provide(fptr)
+}
+
+// UseRouter copies over the routes and swagger info from the other router.
+func (r *ReflectRouter) UseRouter(other *ReflectRouter) *ReflectRouter {
+	r.Swagger.Info = other.Swagger.Info
+	r.Mount("/", other)
 	return r
 }
 
@@ -57,7 +70,7 @@ func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, opt
 		option(r.Swagger, o)
 	}
 
-	fn, err := HandlerFromFnDefault(handler, r.handleFns, r.Components())
+	fn, err := HandlerFromFn(handler, r.handleFns, r.Components(), r.c)
 	if err != nil {
 		panic(err)
 	}
@@ -110,11 +123,4 @@ func (r *ReflectRouter) Delete(path string, handler interface{}, options []opera
 
 func (r *ReflectRouter) Head(path string, handler interface{}, options []operations.Option, middleware ...middleware) {
 	r.MethodFunc(http.MethodHead, path, handler, options, middleware...)
-}
-
-// UseRouter copies over the routes and swagger info from the other router.
-func (r *ReflectRouter) UseRouter(other *ReflectRouter) *ReflectRouter {
-	r.Swagger.Info = other.Swagger.Info
-	r.Mount("/", other)
-	return r
 }

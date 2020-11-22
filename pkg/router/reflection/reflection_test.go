@@ -456,3 +456,27 @@ func TestRouteMiddleware(t *testing.T) {
 
 	dummyR.ServeHTTP(w, req)
 }
+
+func TestContainerProvider(t *testing.T) {
+	fns := RequestHandleFns{
+		ErrFn: func(_ http.ResponseWriter, _ *http.Request, err error) {
+			t.Fatal(err)
+		},
+	}
+	dummyR := NewRouter(fns)
+	dummyR.Provide(func() string {
+		return "hello world"
+	})
+	dummyR.Get("/", func(r *http.Request, ctx context.Context, someStr string) error {
+		if someStr != "hello world" {
+			return fmt.Errorf("expected 'hello world', got: %v", someStr)
+		}
+		return nil
+	}, []Option{})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Add("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	dummyR.ServeHTTP(w, req)
+}
