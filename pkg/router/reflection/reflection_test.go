@@ -475,14 +475,17 @@ func TestContainerProvider(t *testing.T) {
 		}
 	}()
 	dummyR := NewRouter(fns)
-	dummyR.Provide(func() string {
+	err := dummyR.Provide(func() (string, int, error) {
 		// make sure this function is cached
 		// will error if called more than once
 		counter()
-		return "hello world"
+		return "hello world", 1, nil
 	})
-	dummyR.Get("/", func(r *http.Request, ctx context.Context, someStr, another string) error {
-		if someStr != "hello world" || another != "hello world" {
+	if err != nil {
+		t.Fatal(err)
+	}
+	dummyR.Get("/", func(r *http.Request, ctx context.Context, someStr, another string, number int) error {
+		if someStr != "hello world" || another != "hello world" || number != 1 {
 			return fmt.Errorf("expected 'hello world', got: %v", someStr)
 		}
 		return nil

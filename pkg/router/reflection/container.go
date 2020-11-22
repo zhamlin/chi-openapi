@@ -300,16 +300,16 @@ func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 			return vals, err
 		}
 
-		// find value from returns that matches this arg
-		// and add it to the cache
+		// add every type that wasn't an error returned to the cache
 		for _, result := range results {
-			if result.Type() == t {
-				cache[t] = result
-				break
+			rType := result.Type()
+			cache[rType] = result
+
+			// this is our current argument, add it to the vals in the correct order here
+			if rType == t || t.AssignableTo(rType) {
+				vals = append(vals, result)
 			}
 		}
-
-		vals = append(vals, results...)
 	}
 	results := fn.Call(vals)
 	return findError(errLocation, results)
