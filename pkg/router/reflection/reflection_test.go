@@ -463,12 +463,26 @@ func TestContainerProvider(t *testing.T) {
 			t.Fatal(err)
 		},
 	}
+
+	counter := func() func() {
+		state := 0
+		return func() {
+			state++
+			if state > 1 {
+				t.Fatalf("this function should only be called once, but was called: %v times", state)
+			}
+			t.Log(state)
+		}
+	}()
 	dummyR := NewRouter(fns)
 	dummyR.Provide(func() string {
+		// make sure this function is cached
+		// will error if called more than once
+		counter()
 		return "hello world"
 	})
-	dummyR.Get("/", func(r *http.Request, ctx context.Context, someStr string) error {
-		if someStr != "hello world" {
+	dummyR.Get("/", func(r *http.Request, ctx context.Context, someStr, another string) error {
+		if someStr != "hello world" || another != "hello world" {
 			return fmt.Errorf("expected 'hello world', got: %v", someStr)
 		}
 		return nil

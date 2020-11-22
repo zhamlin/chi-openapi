@@ -169,6 +169,7 @@ func (c *container) Provide(fn interface{}) error {
 
 // Execute will try and call the function with all of the arguments.
 func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, error) {
+	cache := map[reflect.Type]reflect.Value{}
 	val := reflect.ValueOf(fn)
 	typ := val.Type()
 	errLocation := -1
@@ -183,7 +184,7 @@ func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, er
 			}
 		}
 	}
-	values, err := c.execute(val, errLocation, args...)
+	values, err := c.execute(val, errLocation, cache, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -215,13 +216,15 @@ func findError(errLoc int, values []reflect.Value) ([]reflect.Value, error) {
 	return values, nil
 }
 
-func (c container) execute(fn reflect.Value, errLocation int, args ...interface{}) ([]reflect.Value, error) {
+func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.Type]reflect.Value, args ...interface{}) ([]reflect.Value, error) {
 	typ := fn.Type()
 	if typ.Kind() != reflect.Func {
 		return nil, fmt.Errorf("expected a function, got: %v", typ)
 	}
 	vals := []reflect.Value{}
 	if typ.NumIn() == 0 {
+		// TODO: is there only because it was failed to be checked
+		// at a lower level in this function?
 		results := fn.Call([]reflect.Value{})
 		// swap return values with passed in value if any
 		// if this function returns errors, ignore them because
@@ -250,13 +253,19 @@ func (c container) execute(fn reflect.Value, errLocation int, args ...interface{
 		createArgs := []reflect.Value{}
 		t := typ.In(i)
 
+		// if in cache, use that value instead to prevent
+		// expensive functions from being called twice
+		if cached, has := cache[t]; has {
+			vals = append(vals, cached)
+			continue
+		}
+
 		// whether or not this type was explicitly passed to execute
 		providedType := false
 		for _, arg := range args {
 			argType := reflect.TypeOf(arg)
 			// fmt.Printf("%v %v\n", t, argType)
 			if t == argType || argType.AssignableTo(t) {
-				createArgs = append(createArgs, reflect.ValueOf(arg))
 				vals = append(vals, reflect.ValueOf(arg))
 				providedType = true
 				break
@@ -278,7 +287,7 @@ func (c container) execute(fn reflect.Value, errLocation int, args ...interface{
 		// walk down the dependency tree, and create each type
 		for _, edge := range l.incomingEdges {
 			if val, has := c.Graph.Verticies[edge.From]; has {
-				results, err := c.execute(val.fn, val.errorOutLocation, args...)
+				results, err := c.execute(val.fn, val.errorOutLocation, cache, args...)
 				if err != nil {
 					return vals, err
 				}
@@ -290,9 +299,17 @@ func (c container) execute(fn reflect.Value, errLocation int, args ...interface{
 		if err != nil {
 			return vals, err
 		}
-		vals = append(vals, results...)
 
-		// TODO: add these values to a cache of some kind
+		// find value from returns that matches this arg
+		// and add it to the cache
+		for _, result := range results {
+			if result.Type() == t {
+				cache[t] = result
+				break
+			}
+		}
+
+		vals = append(vals, results...)
 	}
 	results := fn.Call(vals)
 	return findError(errLocation, results)
