@@ -6,9 +6,8 @@ import (
 )
 
 type loader struct {
-	fn                reflect.Value
-	hasAllNeededTypes bool
-	errorOutLocation  int
+	fn               reflect.Value
+	errorOutLocation int
 
 	// slice of pointers to the graphs edges
 	// relating to this vertex
@@ -46,13 +45,13 @@ type vertexStatus int
 const (
 	vStatusUnmarked vertexStatus = iota
 	vStatusTemporary
-	VStatusPermanent
+	vStatusPermanent
 )
 
 type vertexMarker map[reflect.Type]vertexStatus
 
 func (g graph) checkCyclicDepsUtil(l *loader, sorted *[]reflect.Type, marker vertexMarker) error {
-	if status, has := marker[l.typ]; has && status == VStatusPermanent {
+	if status, has := marker[l.typ]; has && status == vStatusPermanent {
 		return nil
 	}
 	if status, has := marker[l.typ]; has && status == vStatusTemporary {
@@ -64,7 +63,7 @@ func (g graph) checkCyclicDepsUtil(l *loader, sorted *[]reflect.Type, marker ver
 			return err
 		}
 	}
-	marker[l.typ] = VStatusPermanent
+	marker[l.typ] = vStatusPermanent
 	*sorted = append([]reflect.Type{l.typ}, *sorted...)
 	return nil
 }
@@ -165,7 +164,7 @@ func (c *container) Provide(fn interface{}) error {
 // this will prevent one func being called multiple times.
 // Probably should have that passed directly to this, and maybe even returned.
 // Would allow the caller to choose whether or not they want a new value
-func (c container) Execute(fn interface{}) (interface{}, error) {
+func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, error) {
 	val := reflect.ValueOf(fn)
 	typ := val.Type()
 	errLocation := -1
@@ -180,7 +179,7 @@ func (c container) Execute(fn interface{}) (interface{}, error) {
 			}
 		}
 	}
-	return c.execute(val, errLocation)
+	return c.execute(val, errLocation, args...)
 }
 
 // findError removes any empty errors if any, or returns an error if found
@@ -205,7 +204,7 @@ func findError(errLoc int, values []reflect.Value) ([]reflect.Value, error) {
 	return values, nil
 }
 
-func (c container) execute(fn reflect.Value, errLocation int) ([]reflect.Value, error) {
+func (c container) execute(fn reflect.Value, errLocation int, args ...interface{}) ([]reflect.Value, error) {
 	typ := fn.Type()
 	if typ.Kind() != reflect.Func {
 		return nil, fmt.Errorf("expected a function, got: %v", typ)
@@ -213,11 +212,37 @@ func (c container) execute(fn reflect.Value, errLocation int) ([]reflect.Value, 
 	vals := []reflect.Value{}
 	if typ.NumIn() == 0 {
 		results := fn.Call([]reflect.Value{})
+		// swap return values with passed in value, if any
+		for _, arg := range args {
+			for i := 0; i < len(results); i++ {
+				if results[i].Type() == reflect.TypeOf(arg) {
+					results[i] = reflect.ValueOf(arg)
+					break
+				}
+			}
+		}
 		return findError(errLocation, results)
 	}
 
 	for i := 0; i < typ.NumIn(); i++ {
+		createArgs := []reflect.Value{}
 		t := typ.In(i)
+
+		// whether or not this type was explicitly passed to execute
+		providedType := false
+		for _, arg := range args {
+			if t == reflect.TypeOf(arg) {
+				createArgs = append(createArgs, reflect.ValueOf(arg))
+				vals = append(vals, reflect.ValueOf(arg))
+				providedType = true
+				break
+			}
+		}
+
+		if providedType {
+			continue
+		}
+
 		l, has := c.Graph.Verticies[t]
 		if !has {
 			return vals, fmt.Errorf("don't know how to create type: %v", t)
@@ -226,11 +251,10 @@ func (c container) execute(fn reflect.Value, errLocation int) ([]reflect.Value, 
 			return vals, fmt.Errorf("create function is nil for %v", t)
 		}
 
-		createArgs := []reflect.Value{}
 		// walk down the dependency tree, and create each type
 		for _, edge := range l.incomingEdges {
 			if val, has := c.Graph.Verticies[edge.From]; has {
-				results, err := c.execute(val.fn, val.errorOutLocation)
+				results, err := c.execute(val.fn, val.errorOutLocation, args...)
 				if err != nil {
 					return vals, err
 				}
@@ -243,6 +267,7 @@ func (c container) execute(fn reflect.Value, errLocation int) ([]reflect.Value, 
 			return vals, err
 		}
 		vals = append(vals, results...)
+
 		// TODO: add these values to a cache of some kind
 	}
 	results := fn.Call(vals)

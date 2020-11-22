@@ -69,6 +69,67 @@ func TestLoaderFunc(t *testing.T) {
 	}))
 }
 
+func TestLoaderFuncExecuteWithValues(t *testing.T) {
+	failErr := failErrT(t)
+	c := NewContainer()
+
+	// dummy func provided so sort doesn't return an err
+	failErr(c.Provide(func() string {
+		return ""
+	}))
+
+	failErr(c.Provide(func(v string) (int, error) {
+		return strconv.Atoi(v)
+	}))
+
+	_, err := c.Graph.Sort()
+	failErr(err)
+
+	number := "12"
+	_, err = c.Execute(func(value int) error {
+		if fmt.Sprintf("%v", value) != number {
+			t.Fatalf("expected %v, got: %v", number, value)
+		}
+		return nil
+	}, number)
+	failErr(err)
+
+}
+
+func TestLoaderFuncExecuteWithValuesStruct(t *testing.T) {
+	failErr := failErrT(t)
+	c := NewContainer()
+
+	// dummy func provided so sort doesn't return an err
+	failErr(c.Provide(func() string {
+		return ""
+	}))
+
+	failErr(c.Provide(func(v string) (int, error) {
+		return strconv.Atoi(v)
+	}))
+
+	type testStruct struct {
+		Value int
+	}
+	failErr(c.Provide(func(val int) testStruct {
+		return testStruct{Value: val}
+	}))
+
+	_, err := c.Graph.Sort()
+	failErr(err)
+
+	number := "12"
+	_, err = c.Execute(func(test testStruct) error {
+		if fmt.Sprint(test.Value) != number {
+			return fmt.Errorf("expected %v, got: %v", number, test.Value)
+		}
+		return nil
+	}, number)
+	failErr(err)
+
+}
+
 func BenchmarkLoaderFunc(b *testing.B) {
 	failErr := failErrT(b)
 	c := NewContainer()
