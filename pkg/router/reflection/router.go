@@ -85,7 +85,7 @@ func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, opt
 
 	fn, err := HandlerFromFn(handler, r.handleFns, r.Components(), r.c)
 	if err != nil {
-		panic(fmt.Sprintf("router: cannot create automatic handler: %v", err))
+		panic(fmt.Sprintf("router [%s %s]: cannot create automatic handler: %v", method, path, err))
 	}
 
 	if len(middleware) > 0 {

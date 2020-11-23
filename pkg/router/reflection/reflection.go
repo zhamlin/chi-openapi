@@ -279,43 +279,6 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 	return reflect.MakeFunc(dynamicFuncType, dynamicFunc), nil
 }
 
-// createParamLoadFunc creates a function that can create the type passed in
-func createParamLoadFunc(arg reflect.Type, components openapi.Components) (reflect.Value, error) {
-	params, has := components.Parameters[arg]
-	if !has {
-		var err error
-		params, err = openapi.ParamsFromType(arg)
-		if err != nil {
-			return reflect.Value{}, err
-		}
-		components.Parameters[arg] = params
-	}
-
-	// func to create this body
-	dynamicFuncType := reflect.FuncOf([]reflect.Type{ctxType}, []reflect.Type{arg, errType}, false)
-	dynamicFunc := func(in []reflect.Value) []reflect.Value {
-		argObj := reflect.New(arg).Elem()
-		ctx, ok := in[0].Interface().(context.Context)
-		if !ok {
-			err := fmt.Errorf("expected the first arg to be context.Context, got %v", in[0].Type())
-			return []reflect.Value{argObj, reflect.ValueOf(err)}
-		}
-		input, err := router.InputFromCTX(ctx)
-		if err != nil {
-			return []reflect.Value{argObj, reflect.ValueOf(err)}
-		}
-		v, err := openapi.LoadParamStruct(argObj.Interface(), openapi.LoadParamInput{
-			RequestValidationInput: input,
-			Params:                 params,
-		})
-		if err != nil {
-			return []reflect.Value{argObj, reflect.ValueOf(err)}
-		}
-		return []reflect.Value{v, reflect.Zero(errType)}
-	}
-	return reflect.MakeFunc(dynamicFuncType, dynamicFunc), nil
-}
-
 // createJSONBodyLoadFunc creates a function that can create the type passed in
 func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflect.Value {
 	dynamicFuncType := reflect.FuncOf([]reflect.Type{requestPtrType}, []reflect.Type{arg, errType}, false)
