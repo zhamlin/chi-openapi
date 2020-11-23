@@ -145,9 +145,11 @@ func paramFromStructField(field reflect.StructField) (*openapi3.ParameterRef, er
 	}, nil
 }
 
+var ErrNotStruct = fmt.Errorf("expected a struct")
+
 func ParamsFromType(typ reflect.Type) (openapi3.Parameters, error) {
 	if typ.Kind() != reflect.Struct {
-		return openapi3.Parameters{}, fmt.Errorf("expected a struct, got: %v", typ.Kind())
+		return openapi3.Parameters{}, fmt.Errorf("got %v: %w", typ.Kind(), ErrNotStruct)
 	}
 
 	objParams := openapi3.Parameters{}

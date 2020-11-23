@@ -183,8 +183,7 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 	}
 
 	inputTypes := []reflect.Type{ctxType}
-	// find all objects that we need passed in
-	// which will be anything that isn't a query param.
+	// find anything that isn't a query param and try to load it
 	for i := 0; i < arg.NumField(); i++ {
 		field := arg.Field(i)
 
@@ -193,6 +192,12 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 			err := fmt.Errorf("struct '%v' must only contain public fields: field '%v' not public", arg, field.Name)
 			return reflect.Value{}, err
 		}
+
+		if container.HasType(field.Type) {
+			inputTypes = append(inputTypes, field.Type)
+			continue
+		}
+
 		queryLocation := openapi.GetParameterType(field.Tag)
 		if queryLocation.IsValid() {
 			continue
@@ -202,6 +207,17 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 		// check to see if there is a jsonBody
 		schema, has := components.Schemas[openapi.GetTypeName(field.Type)]
 		if !has {
+			if field.Type.Kind() != reflect.Struct {
+				return reflect.Value{}, fmt.Errorf("unknown type: %v", field.Type)
+			}
+			// not a recognized json body, so try to create it via
+			fn, err := createLoadStructFunc(field.Type, components, container)
+			if err != nil {
+				return reflect.Value{}, err
+			}
+			if err := container.Provide(fn.Interface()); err != nil {
+				return reflect.Value{}, err
+			}
 			continue
 		}
 
@@ -261,13 +277,16 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 					continue
 				}
 
-				// grab the first item, this array is in order that
-				// the struct fields were parsed in
-				argValue := in[0]
-				argObj.Field(i).Set(argValue)
+				if len(in) >= 1 {
+					// grab the first item, this array is in order that
+					// the struct fields were parsed in
+					argValue := in[0]
+					argObj.Field(i).Set(argValue)
 
-				// remove the value we just used
-				in = in[1:]
+					// remove the value we just used
+					in = in[1:]
+				}
+
 			}
 			return nil
 		}()
