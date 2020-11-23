@@ -32,7 +32,7 @@ type SchemaInline interface {
 
 const componentSchemasPath = "#/components/schemas/"
 
-func getTypeName(typ reflect.Type) string {
+func GetTypeName(typ reflect.Type) string {
 	// check to see if the name is set via the SchemaID method
 	name := typ.Name()
 	schemaInterface := reflect.TypeOf((*SchemaID)(nil)).Elem()
@@ -66,7 +66,7 @@ var (
 
 func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi3.SchemaRef {
 	schema := openapi3.NewSchema()
-	name := getTypeName(typ)
+	name := GetTypeName(typ)
 
 	if schemas != nil {
 		// if we've already loaded this type, return a reference

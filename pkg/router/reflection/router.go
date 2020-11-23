@@ -4,6 +4,7 @@ import (
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/openapi/operations"
 	"chi-openapi/pkg/router"
+	"fmt"
 	"net/http"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -18,16 +19,28 @@ type ReflectRouter struct {
 }
 
 // NewRouter returns a wrapped chi router
-func NewRouter(handleFns RequestHandleFns) *ReflectRouter {
+func NewRouter() *ReflectRouter {
 	return &ReflectRouter{
-		Router:    router.NewRouter(),
-		handleFns: handleFns,
-		c:         NewContainer(),
+		Router: router.NewRouter(),
+		c:      NewContainer(),
 	}
 }
 
-func NewRouterWithInfo(info openapi.Info, handleFns RequestHandleFns) *ReflectRouter {
-	r := NewRouter(handleFns)
+func (r *ReflectRouter) SetParent(parent *ReflectRouter) *ReflectRouter {
+	if parent == nil {
+		return r
+	}
+	r.c = parent.c
+	r.handleFns = parent.handleFns
+	return r
+}
+
+func (r *ReflectRouter) WithHandlers(handleFns RequestHandleFns) *ReflectRouter {
+	r.handleFns = handleFns
+	return r
+}
+
+func (r *ReflectRouter) WithInfo(info openapi.Info) *ReflectRouter {
 	apiInfo := openapi3.Info(info)
 	r.Swagger.Info = &apiInfo
 	return r
@@ -46,7 +59,7 @@ func (r *ReflectRouter) UseRouter(other *ReflectRouter) *ReflectRouter {
 
 // Route mounts a sub-Router along a `pattern`` string.
 func (r *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
-	subRouter := NewRouter(r.handleFns)
+	subRouter := NewRouter().WithHandlers(r.handleFns)
 	if fn != nil {
 		fn(subRouter)
 	}
@@ -72,7 +85,7 @@ func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, opt
 
 	fn, err := HandlerFromFn(handler, r.handleFns, r.Components(), r.c)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("router: cannot create automatic handler: %v", err))
 	}
 
 	if len(middleware) > 0 {

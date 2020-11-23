@@ -88,7 +88,7 @@ func errHandler(t tester) RequestHandleFns {
 }
 
 func routerWithMiddleware(handler interface{}) *ReflectRouter {
-	dummyR := NewRouter(RequestHandleFns{})
+	dummyR := NewRouter()
 	dummyR.Get("/", handler, []Option{
 		Params(reflectParmas{}),
 		JSONResponse(http.StatusOK, "OK", Response{}),
@@ -108,7 +108,7 @@ func TestReflectionPathParams(t *testing.T) {
 			t.Logf("%+v\n", obj)
 		},
 	}
-	dummyR := NewRouter(fns)
+	dummyR := NewRouter().WithHandlers(fns)
 	dummyR.Get("/path_param/{some_id}", func(ctx context.Context, param pathParam) (Response, error) {
 		if param.ID != "20" {
 			t.Fatalf("expected an id of 20, got: %v", param.ID)
@@ -124,7 +124,7 @@ func TestReflectionPathParams(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := NewRouter(RequestHandleFns{})
+	r := NewRouter()
 	r.Use(jsonHeader)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,6 +140,7 @@ func TestReflectionPathParams(t *testing.T) {
 
 	r.UseRouter(dummyR)
 	components := r.Components()
+	t.Log(components)
 
 	t.Run("simple path", func(t *testing.T) {
 		handler, err := HandlerFromFnDefault(r.ServeHTTP, fns, components)
@@ -157,7 +158,7 @@ func TestReflectionPathParams(t *testing.T) {
 }
 
 func TestReflectionFuncReturns(t *testing.T) {
-	dummyR := NewRouter(RequestHandleFns{})
+	dummyR := NewRouter()
 	dummyR.Get("/multi_return", func(ctx context.Context, params reflectParmas) (Response, error) {
 		t.Logf("%+v\n", params)
 		if params.Int < 0 {
@@ -174,7 +175,7 @@ func TestReflectionFuncReturns(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := NewRouter(RequestHandleFns{})
+	r := NewRouter()
 	r.Use(jsonHeader)
 	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
 	r.UseRouter(dummyR)
@@ -424,7 +425,7 @@ func TestRouteMiddleware(t *testing.T) {
 			t.Logf("%+v\n", obj)
 		},
 	}
-	dummyR := NewRouter(fns)
+	dummyR := NewRouter().WithHandlers(fns)
 	dummyR.Get("/", func(r *http.Request, ctx context.Context) error {
 		if v, ok := r.Context().Value("test").(string); !ok || v != "test" {
 			return fmt.Errorf("expected test, got: '%v'", v)
@@ -474,7 +475,7 @@ func TestContainerProvider(t *testing.T) {
 			t.Log(state)
 		}
 	}()
-	dummyR := NewRouter(fns)
+	dummyR := NewRouter().WithHandlers(fns)
 	err := dummyR.Provide(func() (string, int, error) {
 		// make sure this function is cached
 		// will error if called more than once

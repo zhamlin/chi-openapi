@@ -24,6 +24,10 @@ type Parameter struct {
 	openapi3.Parameter
 }
 
+func (p Parameter) IsValid() bool {
+	return p.Name != "" && p.In != ""
+}
+
 type Parameters map[string]*openapi3.ParameterRef
 
 var paramTags = []string{
@@ -33,8 +37,8 @@ var paramTags = []string{
 	openapi3.ParameterInCookie,
 }
 
-// getParamaterType will set the correct "in" value from the tag
-func getParamaterType(tag reflect.StructTag) Parameter {
+// getParameterType will set the correct "in" value from the tag
+func GetParameterType(tag reflect.StructTag) Parameter {
 	for _, name := range paramTags {
 		if tagValue, ok := tag.Lookup(name); ok {
 			return Parameter{openapi3.Parameter{
@@ -89,7 +93,7 @@ var paramFuncTags = map[string]paramTagFunc{
 	},
 }
 
-func getParamaterOptions(tag reflect.StructTag) Parameter {
+func getParameterOptions(tag reflect.StructTag) Parameter {
 	for _, name := range paramTags {
 		if tagValue, ok := tag.Lookup(name); ok {
 			return Parameter{openapi3.Parameter{
@@ -103,10 +107,12 @@ func getParamaterOptions(tag reflect.StructTag) Parameter {
 
 const componentParamsPath = "#/components/parameters/"
 
-func paramFromStructField(field reflect.StructField, obj reflect.Value) (*openapi3.ParameterRef, error) {
-	param := getParamaterType(field.Tag)
+var errNoLocation = fmt.Errorf("no parameter location")
+
+func paramFromStructField(field reflect.StructField) (*openapi3.ParameterRef, error) {
+	param := GetParameterType(field.Tag)
 	if param.In == "" {
-		return nil, fmt.Errorf("field '%v' has no paramater location", field.Name)
+		return nil, fmt.Errorf("field '%v': %w", field.Name, errNoLocation)
 	}
 	var err error
 	for name, fn := range paramFuncTags {
@@ -117,11 +123,7 @@ func paramFromStructField(field reflect.StructField, obj reflect.Value) (*openap
 		}
 	}
 
-	if obj.IsValid() {
-		param.Schema = schemaFromType(field.Type, nil, nil)
-	} else {
-		param.Schema = schemaFromType(field.Type, nil, nil)
-	}
+	param.Schema = schemaFromType(field.Type, nil, nil)
 
 	// load schema tags
 	for name, fn := range schemaFuncTags {
@@ -143,7 +145,7 @@ func paramFromStructField(field reflect.StructField, obj reflect.Value) (*openap
 	}, nil
 }
 
-func ParamsFromType(typ reflect.Type, obj reflect.Value) (openapi3.Parameters, error) {
+func ParamsFromType(typ reflect.Type) (openapi3.Parameters, error) {
 	if typ.Kind() != reflect.Struct {
 		return openapi3.Parameters{}, fmt.Errorf("expected a struct, got: %v", typ.Kind())
 	}
@@ -153,14 +155,12 @@ func ParamsFromType(typ reflect.Type, obj reflect.Value) (openapi3.Parameters, e
 		field := typ.Field(i)
 		var paramRef *openapi3.ParameterRef
 		var err error
-		if obj.IsValid() {
-			fieldObj := obj.Field(i)
-			paramRef, err = paramFromStructField(field, fieldObj)
-		} else {
-			paramRef, err = paramFromStructField(field, obj)
-		}
-
+		paramRef, err = paramFromStructField(field)
 		if err != nil {
+			// ignore this field
+			if errors.Is(err, errNoLocation) {
+				continue
+			}
 			return objParams, errors.Wrap(err, typ.String())
 		}
 		objParams = append(objParams, paramRef)
@@ -170,8 +170,7 @@ func ParamsFromType(typ reflect.Type, obj reflect.Value) (openapi3.Parameters, e
 
 func ParamsFromObj(obj interface{}) (openapi3.Parameters, error) {
 	typ := reflect.TypeOf(obj)
-	value := reflect.ValueOf(obj)
-	return ParamsFromType(typ, value)
+	return ParamsFromType(typ)
 }
 
 // interfaceSlice converts a slice to an slices of interfaces.

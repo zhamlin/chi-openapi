@@ -169,7 +169,6 @@ func (c *container) Provide(fn interface{}) error {
 
 // Execute will try and call the function with all of the arguments.
 func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, error) {
-	cache := map[reflect.Type]reflect.Value{}
 	val := reflect.ValueOf(fn)
 	typ := val.Type()
 	errLocation := -1
@@ -184,6 +183,11 @@ func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, er
 			}
 		}
 	}
+
+	// we can't just throw args in the cache because
+	// a function might expect an interface, and we only have the concrete
+	// types for the args
+	cache := map[reflect.Type]reflect.Value{}
 	values, err := c.execute(val, errLocation, cache, args...)
 	if err != nil {
 		return nil, err

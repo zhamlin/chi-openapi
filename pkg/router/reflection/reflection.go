@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"unicode"
 
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/router"
@@ -132,9 +133,9 @@ func loadArgsIntoContainer(container *container, typ reflect.Type, components op
 		if container.HasType(arg) {
 			continue
 		}
-
 		if components.Schemas != nil {
-			schema, has := components.Schemas[arg.Name()]
+			// TODO FIXME: this might have to change if the type uses a custom name
+			schema, has := components.Schemas[openapi.GetTypeName(arg)]
 			if has && hasJSONBody {
 				return fmt.Errorf("multiple json body values per handler not allowed")
 			}
@@ -155,16 +156,11 @@ func loadArgsIntoContainer(container *container, typ reflect.Type, components op
 			return fmt.Errorf("no way of creating type: %+v", arg)
 		}
 
-		// TODO: check each field on this struct and try and load:;
-		// 1. Any query params
-		// 2. Any other type we know how to handle
-		// 3. Any other type that the container knows how to create
-
-		// it must be a parameter
-		fn, err := createParamLoadFunc(arg, components)
+		fn, err := createLoadStructFunc(arg, components, container)
 		if err != nil {
 			return err
 		}
+
 		if err := container.Provide(fn.Interface()); err != nil {
 			return err
 		}
@@ -175,12 +171,120 @@ func loadArgsIntoContainer(container *container, typ reflect.Type, components op
 	return err
 }
 
+func createLoadStructFunc(arg reflect.Type, components openapi.Components, container *container) (reflect.Value, error) {
+	params, has := components.Parameters[arg]
+	if !has {
+		var err error
+		params, err = openapi.ParamsFromType(arg)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		components.Parameters[arg] = params
+	}
+
+	inputTypes := []reflect.Type{ctxType}
+	// find all objects that we need passed in
+	// which will be anything that isn't a query param.
+	for i := 0; i < arg.NumField(); i++ {
+		field := arg.Field(i)
+
+		// throw an error on private fields
+		if !unicode.IsUpper(rune(field.Name[0])) {
+			err := fmt.Errorf("struct '%v' must only contain public fields: field '%v' not public", arg, field.Name)
+			return reflect.Value{}, err
+		}
+		queryLocation := openapi.GetParameterType(field.Tag)
+		if queryLocation.IsValid() {
+			continue
+		}
+		inputTypes = append(inputTypes, field.Type)
+
+		// check to see if there is a jsonBody
+		schema, has := components.Schemas[openapi.GetTypeName(field.Type)]
+		if !has {
+			continue
+		}
+
+		// create a provider for the json body
+		fn := createJSONBodyLoadFunc(field.Type, schema)
+		if !fn.IsValid() || fn.IsZero() {
+			return reflect.Value{}, fmt.Errorf("failed to create the load func for: %v", arg)
+		}
+		if err := container.Provide(fn.Interface()); err != nil {
+			return reflect.Value{}, err
+		}
+	}
+
+	dynamicFuncType := reflect.FuncOf(inputTypes, []reflect.Type{arg, errType}, false)
+	dynamicFunc := func(in []reflect.Value) []reflect.Value {
+		argObj := reflect.New(arg).Elem()
+		ctx, ok := in[0].Interface().(context.Context)
+		if !ok {
+			err := fmt.Errorf("expected the first arg to be context.Context, got %v", in[0].Type())
+			return []reflect.Value{argObj, reflect.ValueOf(err)}
+		}
+		// remove the context from this list
+		in = in[1:]
+
+		input, err := router.InputFromCTX(ctx)
+		if err != nil {
+			return []reflect.Value{argObj, reflect.ValueOf(err)}
+		}
+		err = func() error {
+			for i := 0; i < arg.NumField(); i++ {
+				field := arg.Field(i)
+				queryLocation := openapi.GetParameterType(field.Tag)
+				if queryLocation.IsValid() {
+					p := params.GetByInAndName(queryLocation.In, queryLocation.Name)
+					var fValue reflect.Value
+					var err error
+					switch p.In {
+					case openapi3.ParameterInQuery:
+						fValue, err = openapi.LoadQueryParam(input.Request, field.Type, p)
+					case openapi3.ParameterInPath:
+						fValue, err = openapi.LoadPathParam(input.PathParams, p)
+					}
+					if err != nil {
+						return fmt.Errorf("failed loading param '%+v': %w", p, err)
+					}
+					if !fValue.IsValid() {
+						return fmt.Errorf("invalid value for type: %v", field.Type)
+					}
+					v, err := openapi.VarToInterface(fValue.Interface())
+					if err != nil {
+						return err
+					}
+					if err := p.Schema.Value.VisitJSON(v); err != nil {
+						return err
+					}
+					argObj.Field(i).Set(fValue)
+					continue
+				}
+
+				// grab the first item, this array is in order that
+				// the struct fields were parsed in
+				argValue := in[0]
+				argObj.Field(i).Set(argValue)
+
+				// remove the value we just used
+				in = in[1:]
+			}
+			return nil
+		}()
+		if err != nil {
+			return []reflect.Value{argObj, reflect.ValueOf(err)}
+		}
+		return []reflect.Value{argObj, reflect.Zero(errType)}
+	}
+	return reflect.MakeFunc(dynamicFuncType, dynamicFunc), nil
+}
+
 // createParamLoadFunc creates a function that can create the type passed in
 func createParamLoadFunc(arg reflect.Type, components openapi.Components) (reflect.Value, error) {
 	params, has := components.Parameters[arg]
 	if !has {
 		var err error
-		params, err = openapi.ParamsFromType(arg, reflect.Value{})
+		params, err = openapi.ParamsFromType(arg)
 		if err != nil {
 			return reflect.Value{}, err
 		}
