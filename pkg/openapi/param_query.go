@@ -30,12 +30,7 @@ func jsonTagName(tag reflect.StructTag) (string, bool) {
 
 func strToValue(str string, typ reflect.Type, c *container.Container) (reflect.Value, error) {
 	if c != nil && c.HasType(typ) {
-		dynamicFuncType := reflect.FuncOf([]reflect.Type{typ}, []reflect.Type{typ}, false)
-		dynamicFunc := func(in []reflect.Value) []reflect.Value {
-			return []reflect.Value{in[0]}
-		}
-		fn := reflect.MakeFunc(dynamicFuncType, dynamicFunc)
-		value, err := c.Execute(fn.Interface(), str)
+		value, err := c.CreateType(typ, str)
 		if err != nil {
 			return reflect.Value{}, err
 		}

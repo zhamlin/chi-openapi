@@ -324,3 +324,12 @@ func (c Container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 	results := fn.Call(vals)
 	return findError(errLocation, results)
 }
+
+func (c Container) CreateType(typ reflect.Type, args ...interface{}) (interface{}, error) {
+	dynamicFuncType := reflect.FuncOf([]reflect.Type{typ}, []reflect.Type{typ}, false)
+	dynamicFunc := func(in []reflect.Value) []reflect.Value {
+		return []reflect.Value{in[0]}
+	}
+	fn := reflect.MakeFunc(dynamicFuncType, dynamicFunc)
+	return c.Execute(fn.Interface(), args...)
+}
