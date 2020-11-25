@@ -263,10 +263,14 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 					case openapi3.ParameterInQuery:
 						fValue, err = openapi.LoadQueryParam(input.Request, field.Type, p, container)
 					case openapi3.ParameterInPath:
-						fValue, err = openapi.LoadPathParam(input.PathParams, p)
+						fValue, err = openapi.LoadPathParam(input.PathParams, p, field.Type, container)
 					}
 					if err != nil {
-						return fmt.Errorf("failed loading param '%+v': %w", p, err)
+						// if this param isn't required we don't care about the error
+						if p.Required {
+							return fmt.Errorf("failed loading param '%+v': %w", p, err)
+						}
+						continue
 					}
 					if !fValue.IsValid() {
 						return fmt.Errorf("invalid value for type: %v", field.Type)
