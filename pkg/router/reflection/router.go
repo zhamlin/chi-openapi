@@ -1,13 +1,12 @@
 package reflection
 
 import (
+	"chi-openapi/internal/container"
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/openapi/operations"
 	"chi-openapi/pkg/router"
 	"fmt"
 	"net/http"
-
-	"github.com/getkin/kin-openapi/openapi3"
 )
 
 type middleware func(next http.Handler) http.Handler
@@ -15,14 +14,14 @@ type middleware func(next http.Handler) http.Handler
 type ReflectRouter struct {
 	*router.Router
 	handleFns RequestHandleFns
-	c         *container
+	c         *container.Container
 }
 
 // NewRouter returns a wrapped chi router
 func NewRouter() *ReflectRouter {
 	return &ReflectRouter{
 		Router: router.NewRouter(),
-		c:      NewContainer(),
+		c:      container.NewContainer(),
 	}
 }
 
@@ -42,8 +41,7 @@ func (r *ReflectRouter) WithHandlers(handleFns RequestHandleFns) *ReflectRouter 
 }
 
 func (r *ReflectRouter) WithInfo(info openapi.Info) *ReflectRouter {
-	apiInfo := openapi3.Info(info)
-	r.Swagger.Info = &apiInfo
+	r.Router = r.Router.WithInfo(info)
 	return r
 }
 

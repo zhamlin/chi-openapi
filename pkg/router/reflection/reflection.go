@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"unicode"
 
+	"chi-openapi/internal/container"
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/router"
 
@@ -58,7 +59,7 @@ func (h RequestHandleFns) Success(w http.ResponseWriter, r *http.Request, obj in
 // any errors during the http.Handler
 // All arguments will be automatically created and supplied to the function.
 // Only loads params and one json body schema in the components.
-func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Components, c *container) (http.HandlerFunc, error) {
+func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Components, c *container.Container) (http.HandlerFunc, error) {
 	if fptr == nil {
 		return nil, fmt.Errorf("received a nil value for the fnPtr to HandlerFromFn")
 	}
@@ -106,12 +107,12 @@ func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Comp
 }
 
 func HandlerFromFnDefault(fnPtr interface{}, fns RequestHandleFns, components openapi.Components) (http.HandlerFunc, error) {
-	return HandlerFromFn(fnPtr, fns, components, NewContainer())
+	return HandlerFromFn(fnPtr, fns, components, container.NewContainer())
 }
 
 // loadArgsIntoContainer checks that it knows how to create what the handler function expects
 // returns a list of the arguments with the location
-func loadArgsIntoContainer(container *container, typ reflect.Type, components openapi.Components) error {
+func loadArgsIntoContainer(container *container.Container, typ reflect.Type, components openapi.Components) error {
 	// dummy providers, these will be overridden when the container
 	// is Executed
 	container.Provide(func() (http.ResponseWriter, error) {
@@ -171,7 +172,7 @@ func loadArgsIntoContainer(container *container, typ reflect.Type, components op
 	return err
 }
 
-func createLoadStructFunc(arg reflect.Type, components openapi.Components, container *container) (reflect.Value, error) {
+func createLoadStructFunc(arg reflect.Type, components openapi.Components, container *container.Container) (reflect.Value, error) {
 	params, has := components.Parameters[arg]
 	if !has {
 		var err error

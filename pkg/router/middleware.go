@@ -12,20 +12,7 @@ import (
 
 	"github.com/felixge/httpsnoop"
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/go-chi/chi"
 )
-
-// pathParams returns all chi url params from the request
-func pathParams(r *http.Request) map[string]string {
-	rCtx := chi.RouteContext(r.Context())
-
-	pathParams := map[string]string{}
-	for i := 0; i < len(rCtx.URLParams.Values); i++ {
-		name := rCtx.URLParams.Keys[i]
-		pathParams[name] = rCtx.URLParams.Values[i]
-	}
-	return pathParams
-}
 
 func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationInput {
 	return &openapi3filter.RequestValidationInput{

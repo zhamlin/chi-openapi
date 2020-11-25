@@ -1,4 +1,4 @@
-package reflection
+package container
 
 import (
 	"errors"
@@ -88,8 +88,8 @@ func (g graph) Sort() ([]reflect.Type, error) {
 	return sortedVerticies, nil
 }
 
-func NewContainer() *container {
-	return &container{
+func NewContainer() *Container {
+	return &Container{
 		Graph: graph{
 			Edges:    []edge{},
 			Vertices: map[reflect.Type]*loader{},
@@ -97,14 +97,16 @@ func NewContainer() *container {
 	}
 }
 
-type container struct {
+type Container struct {
 	Graph graph
 }
 
-func (c *container) HasType(t reflect.Type) bool {
+func (c *Container) HasType(t reflect.Type) bool {
 	_, has := c.Graph.Vertices[t]
 	return has
 }
+
+var errType = reflect.TypeOf((*error)(nil)).Elem()
 
 // getErrorLocation validates that the function is returning at most one error
 // and returns the location if it is returning an error.
@@ -128,7 +130,7 @@ func getErrorLocation(fnType reflect.Type) (int, error) {
 // Provide adds the return types of the function as
 // vertices on a graph and attempts to add edges
 // based on the arguments of the function
-func (c *container) Provide(fn interface{}) error {
+func (c *Container) Provide(fn interface{}) error {
 	fnVal := reflect.ValueOf(fn)
 	fnTyp := fnVal.Type()
 	if fnTyp.Kind() != reflect.Func {
@@ -182,7 +184,7 @@ func (c *container) Provide(fn interface{}) error {
 }
 
 // Execute will try and call the function with all of the arguments.
-func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, error) {
+func (c Container) Execute(fn interface{}, args ...interface{}) (interface{}, error) {
 	val := reflect.ValueOf(fn)
 	typ := val.Type()
 
@@ -229,7 +231,7 @@ func findError(errLoc int, values []reflect.Value) ([]reflect.Value, error) {
 	return values, fmt.Errorf("expected an error type value for the %v return type, got %v", errLoc, errValue.Type())
 }
 
-func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.Type]reflect.Value, args ...interface{}) ([]reflect.Value, error) {
+func (c Container) execute(fn reflect.Value, errLocation int, cache map[reflect.Type]reflect.Value, args ...interface{}) ([]reflect.Value, error) {
 	typ := fn.Type()
 	if typ.Kind() != reflect.Func {
 		return nil, fmt.Errorf("expected a function, got: %v", typ)

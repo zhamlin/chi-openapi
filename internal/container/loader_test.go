@@ -1,4 +1,4 @@
-package reflection
+package container
 
 import (
 	"errors"
@@ -6,6 +6,13 @@ import (
 	"strconv"
 	"testing"
 )
+
+type tester interface {
+	Error(args ...interface{})
+	Log(args ...interface{})
+	Logf(msg string, args ...interface{})
+	Fatal(args ...interface{})
+}
 
 func failErrT(t tester) func(error) {
 	return func(err error) {

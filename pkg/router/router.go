@@ -39,8 +39,7 @@ func NewRouter() *Router {
 	}
 }
 
-func NewRouterWithInfo(info openapi.Info) *Router {
-	r := NewRouter()
+func (r *Router) WithInfo(info openapi.Info) *Router {
 	apiInfo := openapi3.Info(info)
 	r.Swagger.Info = &apiInfo
 	return r
