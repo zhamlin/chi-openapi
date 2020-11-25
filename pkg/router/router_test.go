@@ -490,18 +490,21 @@ func TestRouterMapComponents(t *testing.T) {
 	}
 }
 
-func TestRouterCustomTypeParam(t *testing.T) {
+func TestRouterCustomType(t *testing.T) {
 	router := NewRouter()
 	uuidSchema := openapi3.NewSchema().
 		WithPattern("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 	uuidSchema.Type = "string"
 	router.RegisterType(uuid.UUID{}, uuidSchema)
 
+	type testStruct struct {
+		ID uuid.UUID `json:"id"`
+	}
 	router.Get("/", responseHandler, []Option{
 		Params(struct {
 			ID uuid.UUID `query:"id"`
 		}{}),
-		JSONResponse(http.StatusOK, "OK", nil),
+		JSONResponse(http.StatusOK, "OK", testStruct{}),
 	})
 
 	r := NewRouter().With(jsonHeader)
@@ -518,6 +521,17 @@ func TestRouterCustomTypeParam(t *testing.T) {
           "UUID": {
             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
             "type": "string"
+          },
+          "testStruct": {
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/UUID"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
           }
         }
       },
@@ -542,7 +556,14 @@ func TestRouterCustomTypeParam(t *testing.T) {
             ],
             "responses": {
               "200": {
-                "description": "OK"
+                "description": "OK",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/testStruct"
+                    }
+                  }
+                }
               }
             }
           }

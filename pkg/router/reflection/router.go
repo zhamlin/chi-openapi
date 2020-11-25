@@ -60,7 +60,7 @@ func (r *ReflectRouter) UseRouter(other *ReflectRouter) *ReflectRouter {
 
 // Route mounts a sub-Router along a `pattern`` string.
 func (r *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
-	subRouter := NewRouter().WithHandlers(r.handleFns)
+	subRouter := NewRouter().SetParent(r).WithHandlers(r.handleFns)
 	if fn != nil {
 		fn(subRouter)
 	}

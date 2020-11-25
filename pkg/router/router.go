@@ -110,10 +110,14 @@ func (r *Router) Mount(route string, handler http.Handler) {
 			r.Swagger.Paths[path.Join(route, name)] = item
 		}
 		for name, item := range obj.Swagger.Components.Schemas {
-			r.Swagger.Components.Schemas[name] = item
+			if _, has := r.Swagger.Components.Schemas[name]; !has {
+				r.Swagger.Components.Schemas[name] = item
+			}
 		}
 		for name, item := range obj.Swagger.Components.Responses {
-			r.Swagger.Components.Responses[name] = item
+			if _, has := r.Swagger.Components.Responses[name]; !has {
+				r.Swagger.Components.Responses[name] = item
+			}
 		}
 	}
 	r.Mux.Mount(route, handler)
