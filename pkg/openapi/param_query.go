@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"chi-openapi/internal/container"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -27,7 +28,19 @@ func jsonTagName(tag reflect.StructTag) (string, bool) {
 	return results[0], true
 }
 
-func strToValue(str string, typ reflect.Type) (reflect.Value, error) {
+func strToValue(str string, typ reflect.Type, c *container.Container) (reflect.Value, error) {
+	if c != nil && c.HasType(typ) {
+		dynamicFuncType := reflect.FuncOf([]reflect.Type{typ}, []reflect.Type{typ}, false)
+		dynamicFunc := func(in []reflect.Value) []reflect.Value {
+			return []reflect.Value{in[0]}
+		}
+		fn := reflect.MakeFunc(dynamicFuncType, dynamicFunc)
+		value, err := c.Execute(fn.Interface(), str)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(value), nil
+	}
 	switch typ.Kind() {
 	case reflect.String:
 		return reflect.ValueOf(str), nil
@@ -49,9 +62,9 @@ func strToValue(str string, typ reflect.Type) (reflect.Value, error) {
 	return reflect.Value{}, nil
 }
 
-func queryValueFn(value string, typ reflect.Type) (reflect.Value, error) {
+func queryValueFn(value string, typ reflect.Type, c *container.Container) (reflect.Value, error) {
 	const delim = ","
-	v, err := strToValue(value, typ)
+	v, err := strToValue(value, typ, c)
 	if err != nil {
 		return v, err
 	}
@@ -63,7 +76,7 @@ func queryValueFn(value string, typ reflect.Type) (reflect.Value, error) {
 		results := strings.Split(value, delim)
 		obj := reflect.New(typ).Elem()
 		for _, r := range results {
-			v, err := queryValueFn(r, typ.Elem())
+			v, err := queryValueFn(r, typ.Elem(), c)
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -76,7 +89,7 @@ func queryValueFn(value string, typ reflect.Type) (reflect.Value, error) {
 
 // https://swagger.io/docs/specification/serialization/
 
-func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter) (result reflect.Value, err error) {
+func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter, c *container.Container) (result reflect.Value, err error) {
 	if param == nil {
 		return result, nil
 	}
@@ -89,7 +102,7 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 			return result, fmt.Errorf("structs are not supported for this format")
 		}
 		value := q.Get(param.Name)
-		return queryValueFn(value, typ)
+		return queryValueFn(value, typ, c)
 	case queryFormat{true, "form"}:
 		// handle structs differently than the rest
 		// all of the structs field are going to be inlined
@@ -102,7 +115,7 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 					continue
 				}
 				if v, has := q[jsonTag]; has && len(v) == 1 {
-					value, err := queryValueFn(v[0], field.Type)
+					value, err := queryValueFn(v[0], field.Type, c)
 					if err != nil {
 						return value, err
 					}
@@ -121,12 +134,12 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 		}
 
 		if len(values) == 1 && param.Schema.Value.Type != "array" {
-			return strToValue(values[0], typ)
+			return strToValue(values[0], typ, nil)
 		}
 
 		obj := reflect.New(typ).Elem()
 		for _, r := range values {
-			v, err := strToValue(r, typ.Elem())
+			v, err := strToValue(r, typ.Elem(), nil)
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -147,7 +160,7 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 			}
 			queryName := fmt.Sprintf("%s[%s]", param.Name, jsonTag)
 			if v, has := q[queryName]; has && len(v) == 1 {
-				value, err := queryValueFn(v[0], field.Type)
+				value, err := queryValueFn(v[0], field.Type, c)
 				if err != nil {
 					return value, err
 				}

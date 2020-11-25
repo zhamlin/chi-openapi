@@ -261,7 +261,7 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 					var err error
 					switch p.In {
 					case openapi3.ParameterInQuery:
-						fValue, err = openapi.LoadQueryParam(input.Request, field.Type, p)
+						fValue, err = openapi.LoadQueryParam(input.Request, field.Type, p, container)
 					case openapi3.ParameterInPath:
 						fValue, err = openapi.LoadPathParam(input.PathParams, p)
 					}
@@ -272,23 +272,10 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 						return fmt.Errorf("invalid value for type: %v", field.Type)
 					}
 
-					if container.HasType(field.Type) && fValue.Kind() == reflect.String {
-						dynamicFuncType := reflect.FuncOf([]reflect.Type{field.Type}, []reflect.Type{field.Type}, false)
-						dynamicFunc := func(in []reflect.Value) []reflect.Value {
-							return []reflect.Value{in[0]}
-						}
-						fn := reflect.MakeFunc(dynamicFuncType, dynamicFunc)
-						value, err := container.Execute(fn.Interface(), fValue.Interface())
-						if err != nil {
-							return err
-						}
-						fValue = reflect.ValueOf(value)
-					}
-
-					_, err = openapi.VarToInterface(fValue.Interface())
-					if err != nil {
-						return err
-					}
+					// _, err = openapi.VarToInterface(fValue.Interface())
+					// if err != nil {
+					// 	return err
+					// }
 					// if err := p.Schema.Value.VisitJSON(v); err != nil {
 					// 	return err
 					// }

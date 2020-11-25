@@ -246,7 +246,7 @@ func LoadParamStruct(obj interface{}, input LoadParamInput) (reflect.Value, erro
 		switch p.Value.In {
 		// TODO: other query params
 		case openapi3.ParameterInQuery:
-			fValue, err = LoadQueryParam(input.Request, field.Type(), p.Value)
+			fValue, err = LoadQueryParam(input.Request, field.Type(), p.Value, nil)
 		case openapi3.ParameterInPath:
 			fValue, err = LoadPathParam(input.PathParams, p.Value)
 		}
