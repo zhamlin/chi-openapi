@@ -1,19 +1,20 @@
 package reflection
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 )
 
 type loader struct {
 	fn               reflect.Value
+	typ              reflect.Type
 	errorOutLocation int
 
 	// slice of pointers to the graphs edges
 	// relating to this vertex
 	outgoingEdges []*edge
 	incomingEdges []*edge
-	typ           reflect.Type
 }
 
 type edge struct {
@@ -22,8 +23,8 @@ type edge struct {
 }
 
 type graph struct {
-	Edges     []edge
-	Verticies map[reflect.Type]*loader
+	Edges    []edge
+	Vertices map[reflect.Type]*loader
 }
 
 func (g *graph) AddEdge(from, to reflect.Type) {
@@ -32,10 +33,10 @@ func (g *graph) AddEdge(from, to reflect.Type) {
 		To:   to,
 	}
 	g.Edges = append(g.Edges, e)
-	if vertex, has := g.Verticies[from]; has {
+	if vertex, has := g.Vertices[from]; has {
 		vertex.outgoingEdges = append(vertex.outgoingEdges, &e)
 	}
-	if vertex, has := g.Verticies[to]; has {
+	if vertex, has := g.Vertices[to]; has {
 		vertex.incomingEdges = append(vertex.incomingEdges, &e)
 	}
 }
@@ -55,12 +56,12 @@ func (g graph) checkCyclicDepsUtil(l *loader, sorted *[]reflect.Type, marker ver
 		return nil
 	}
 	if status, has := marker[l.typ]; has && status == vStatusTemporary {
-		return fmt.Errorf("cyclic dep on type: %v", l.typ)
+		return fmt.Errorf("cyclic dependency on type: %v", l.typ)
 	}
 	marker[l.typ] = vStatusTemporary
 	for _, e := range l.outgoingEdges {
-		if err := g.checkCyclicDepsUtil(g.Verticies[e.To], sorted, marker); err != nil {
-			return err
+		if err := g.checkCyclicDepsUtil(g.Vertices[e.To], sorted, marker); err != nil {
+			return fmt.Errorf("type %v error: %w", l.typ, err)
 		}
 	}
 	marker[l.typ] = vStatusPermanent
@@ -74,12 +75,12 @@ func (g graph) Sort() ([]reflect.Type, error) {
 
 	// quick sanity check on edges
 	for _, e := range g.Edges {
-		if _, has := g.Verticies[e.From]; !has {
+		if _, has := g.Vertices[e.From]; !has {
 			return []reflect.Type{}, fmt.Errorf("no vertex found for type: %v", e.From)
 		}
 	}
 
-	for _, vertex := range g.Verticies {
+	for _, vertex := range g.Vertices {
 		if err := g.checkCyclicDepsUtil(vertex, &sortedVerticies, marker); err != nil {
 			return sortedVerticies, err
 		}
@@ -90,8 +91,8 @@ func (g graph) Sort() ([]reflect.Type, error) {
 func NewContainer() *container {
 	return &container{
 		Graph: graph{
-			Edges:     []edge{},
-			Verticies: map[reflect.Type]*loader{},
+			Edges:    []edge{},
+			Vertices: map[reflect.Type]*loader{},
 		},
 	}
 }
@@ -101,58 +102,71 @@ type container struct {
 }
 
 func (c *container) HasType(t reflect.Type) bool {
-	_, has := c.Graph.Verticies[t]
+	_, has := c.Graph.Vertices[t]
 	return has
+}
+
+// getErrorLocation validates that the function is returning at most one error
+// and returns the location if it is returning an error.
+func getErrorLocation(fnType reflect.Type) (int, error) {
+	errCount := 0
+	errLocation := -1
+
+	for i := 0; i < fnType.NumOut(); i++ {
+		out := fnType.Out(i)
+		if out.Implements(errType) {
+			errCount++
+			errLocation = i
+			if errCount > 1 {
+				return -1, errors.New("function cannot return more than one error")
+			}
+		}
+	}
+	return errLocation, nil
 }
 
 // Provide adds the return types of the function as
 // vertices on a graph and attempts to add edges
 // based on the arguments of the function
 func (c *container) Provide(fn interface{}) error {
-	typ := reflect.TypeOf(fn)
-	if typ.Kind() != reflect.Func {
-		return fmt.Errorf("expected a function, got: %v", typ)
-	}
-	deps := []reflect.Type{}
-	for i := 0; i < typ.NumIn(); i++ {
-		deps = append(deps, typ.In(i))
+	fnVal := reflect.ValueOf(fn)
+	fnTyp := fnVal.Type()
+	if fnTyp.Kind() != reflect.Func {
+		return fmt.Errorf("expected a function, got: %v", fnTyp)
 	}
 
 	provides := []reflect.Type{}
-	errCount := 0
-	errLocation := -1
-	for i := 0; i < typ.NumOut(); i++ {
-		out := typ.Out(i)
-		if out.Implements(errType) {
-			errCount++
-			errLocation = i
-			if errCount > 1 {
-				return fmt.Errorf("function cannot return more than one error")
-			}
-		}
+	errLocation, err := getErrorLocation(fnTyp)
+	if err != nil {
+		return err
 	}
 
-	for i := 0; i < typ.NumOut(); i++ {
-		out := typ.Out(i)
-		if _, has := c.Graph.Verticies[out]; !has {
+	deps := []reflect.Type{}
+	for i := 0; i < fnTyp.NumIn(); i++ {
+		deps = append(deps, fnTyp.In(i))
+	}
+	for i := 0; i < fnTyp.NumOut(); i++ {
+		out := fnTyp.Out(i)
+		if _, has := c.Graph.Vertices[out]; !has {
 			outgoingEdges := []*edge{}
 			incomingEdges := []*edge{}
+
 			// add any edges that already exist for this type
 			for _, e := range c.Graph.Edges {
-				if e.From == out {
+				switch out {
+				case e.From:
 					outgoingEdges = append(outgoingEdges, &e)
-				}
-				if e.To == out {
+				case e.To:
 					incomingEdges = append(incomingEdges, &e)
 				}
 			}
 
-			c.Graph.Verticies[out] = &loader{
+			c.Graph.Vertices[out] = &loader{
 				errorOutLocation: errLocation,
 				outgoingEdges:    outgoingEdges,
 				incomingEdges:    incomingEdges,
 				typ:              out,
-				fn:               reflect.ValueOf(fn),
+				fn:               fnVal,
 			}
 		}
 
@@ -171,22 +185,15 @@ func (c *container) Provide(fn interface{}) error {
 func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, error) {
 	val := reflect.ValueOf(fn)
 	typ := val.Type()
-	errLocation := -1
-	errCount := 0
-	for i := 0; i < typ.NumOut(); i++ {
-		out := typ.Out(i)
-		if out.Implements(errType) {
-			errCount++
-			errLocation = i
-			if errCount > 1 {
-				return nil, fmt.Errorf("function cannot return more than one error")
-			}
-		}
+
+	errLocation, err := getErrorLocation(typ)
+	if err != nil {
+		return nil, err
 	}
 
 	// we can't just throw args in the cache because
-	// a function might expect an interface, and we only have the concrete
-	// types for the args
+	// a function might expect an interface, and we only have the exact
+	// types for the args, not interfaces
 	cache := map[reflect.Type]reflect.Value{}
 	values, err := c.execute(val, errLocation, cache, args...)
 	if err != nil {
@@ -198,26 +205,28 @@ func (c container) Execute(fn interface{}, args ...interface{}) (interface{}, er
 	return nil, nil
 }
 
-// findError removes any empty errors if any, or returns an error if found.
-// expects an errLocation so it knows where to check for the error
+// findError will return the error if it is non nil
+// if not it wil remove the empty error from the values slice
 func findError(errLoc int, values []reflect.Value) ([]reflect.Value, error) {
 	if errLoc < 0 {
 		return values, nil
+	}
+	if l := len(values); errLoc > l {
+		return nil, fmt.Errorf("error location is index %v, slice length is %v", errLoc, l)
 	}
 
 	errValue := values[errLoc]
 	if errValue.IsZero() || errValue.IsNil() {
 		// remove the error from the return array
 		values = append(values[:errLoc], values[errLoc+1:]...)
-	} else {
-		if errValue.Type().Implements(errType) {
-			e := errValue.Elem().Interface().(error)
-			values = append(values[:errLoc], values[errLoc+1:]...)
-			return values, e
-		}
-		return values, fmt.Errorf("expected an error type value for the %v return type", errLoc)
+		return values, nil
 	}
-	return values, nil
+	if errValue.Type().Implements(errType) {
+		e := errValue.Elem().Interface().(error)
+		values = append(values[:errLoc], values[errLoc+1:]...)
+		return values, e
+	}
+	return values, fmt.Errorf("expected an error type value for the %v return type, got %v", errLoc, errValue.Type())
 }
 
 func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.Type]reflect.Value, args ...interface{}) ([]reflect.Value, error) {
@@ -225,10 +234,8 @@ func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 	if typ.Kind() != reflect.Func {
 		return nil, fmt.Errorf("expected a function, got: %v", typ)
 	}
-	vals := []reflect.Value{}
+
 	if typ.NumIn() == 0 {
-		// TODO: is there only because it was failed to be checked
-		// at a lower level in this function?
 		results := fn.Call([]reflect.Value{})
 		// swap return values with passed in value if any
 		// if this function returns errors, ignore them because
@@ -238,21 +245,20 @@ func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 			for i := 0; i < len(results); i++ {
 				rType := results[i].Type()
 				// fmt.Printf("%v | %v %v\n", typ, rType, argType)
-				if rType == argType || argType.AssignableTo(rType) {
+				if argType.AssignableTo(rType) {
 					results[i] = reflect.ValueOf(arg)
 					// remove the error, we aren't using this function
 					if errLocation > -1 {
 						results = append(results[:errLocation], results[errLocation+1:]...)
 					}
 					return results, nil
-					// TODO: might need to set a boolean, and exit right before the find error
-					// break
 				}
 			}
 		}
 		return findError(errLocation, results)
 	}
 
+	vals := []reflect.Value{}
 	for i := 0; i < typ.NumIn(); i++ {
 		createArgs := []reflect.Value{}
 		t := typ.In(i)
@@ -268,19 +274,17 @@ func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 		providedType := false
 		for _, arg := range args {
 			argType := reflect.TypeOf(arg)
-			// fmt.Printf("%v %v\n", t, argType)
-			if t == argType || argType.AssignableTo(t) {
+			if argType.AssignableTo(t) {
 				vals = append(vals, reflect.ValueOf(arg))
 				providedType = true
 				break
 			}
 		}
-
 		if providedType {
 			continue
 		}
 
-		l, has := c.Graph.Verticies[t]
+		l, has := c.Graph.Vertices[t]
 		if !has {
 			return vals, fmt.Errorf("don't know how to create type: %v", t)
 		}
@@ -290,7 +294,7 @@ func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 
 		// walk down the dependency tree, and create each type
 		for _, edge := range l.incomingEdges {
-			if val, has := c.Graph.Verticies[edge.From]; has {
+			if val, has := c.Graph.Vertices[edge.From]; has {
 				results, err := c.execute(val.fn, val.errorOutLocation, cache, args...)
 				if err != nil {
 					return vals, err
@@ -310,7 +314,7 @@ func (c container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 			cache[rType] = result
 
 			// this is our current argument, add it to the vals in the correct order here
-			if rType == t || t.AssignableTo(rType) {
+			if t.AssignableTo(rType) {
 				vals = append(vals, result)
 			}
 		}

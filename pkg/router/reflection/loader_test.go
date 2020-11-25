@@ -1,6 +1,7 @@
 package reflection
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -101,8 +102,8 @@ func TestLoaderFuncExecuteWithValuesStruct(t *testing.T) {
 	c := NewContainer()
 
 	// dummy func provided so sort doesn't return an err
-	failErr(c.Provide(func() string {
-		return ""
+	failErr(c.Provide(func() (string, error) {
+		return "", errors.New("expected a string")
 	}))
 
 	failErr(c.Provide(func(v string) (int, error) {
