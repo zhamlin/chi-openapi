@@ -136,7 +136,7 @@ func TestReflectionPathParams(t *testing.T) {
 			next.ServeHTTP(w, r)
 		})
 	})
-	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.Use(router.SetOpenAPIInput(filterRouter, nil))
 
 	r.UseRouter(dummyR)
 	components := r.Components()
@@ -177,7 +177,7 @@ func TestReflectionFuncReturns(t *testing.T) {
 
 	r := NewRouter()
 	r.Use(jsonHeader)
-	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.Use(router.SetOpenAPIInput(filterRouter, nil))
 	r.UseRouter(dummyR)
 
 	components := r.Components()
@@ -288,9 +288,9 @@ func TestReflectionHandler(t *testing.T) {
 
 	r := router.NewRouter()
 	r.Use(jsonHeader)
-	r.Use(router.SetOpenAPIInput(filterRouter, errorHandler(t)))
+	r.Use(router.SetOpenAPIInput(filterRouter, nil))
 	r.Use(router.VerifyRequest(errorHandler(t)))
-	r.Use(router.VerifyResponse(errorHandler(t)))
+	r.Use(router.VerifyResponse(errorHandler(t), nil))
 	r.UseRouter(dummyR)
 
 	t.Run("normal", func(t *testing.T) {
@@ -348,9 +348,9 @@ func BenchmarkReflection(b *testing.B) {
 	b.Run("verify request and response", func(b *testing.B) {
 		r := router.NewRouter().
 			With(jsonHeader).
-			With(router.SetOpenAPIInput(filterRouter, errorHandler(b))).
+			With(router.SetOpenAPIInput(filterRouter, nil)).
 			With(router.VerifyRequest(errorHandler(b))).
-			With(router.VerifyResponse(errorHandler(b)))
+			With(router.VerifyResponse(errorHandler(b), nil))
 		r.Get("/", handler, []Option{
 			JSONBody("required data", reflectInput{}),
 			JSONResponse(200, "OK", Response{}),
@@ -400,9 +400,9 @@ func BenchmarkReflectionQueryParams(b *testing.B) {
 	b.Run("load simple query param", func(b *testing.B) {
 		r := router.NewRouter().
 			With(jsonHeader).
-			With(router.SetOpenAPIInput(filterRouter, errorHandler(b))).
+			With(router.SetOpenAPIInput(filterRouter, nil)).
 			With(router.VerifyRequest(errorHandler(b))).
-			With(router.VerifyResponse(errorHandler(b)))
+			With(router.VerifyResponse(errorHandler(b), nil))
 		r.Get("/", handler, []Option{
 			Params(reflectParmas{}),
 			JSONBody("required data", reflectInput{}),

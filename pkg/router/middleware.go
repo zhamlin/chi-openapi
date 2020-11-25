@@ -31,9 +31,6 @@ func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationIn
 	return &openapi3filter.RequestValidationInput{
 		Request:     r,
 		QueryParams: r.URL.Query(),
-		Options: &openapi3filter.Options{
-			IncludeResponseStatus: true,
-		},
 	}
 }
 
@@ -55,7 +52,7 @@ func InputFromCTX(ctx context.Context) (*openapi3filter.RequestValidationInput, 
 	return input, nil
 }
 
-func SetOpenAPIInput(router *openapi3filter.Router, errFn ErrorHandler) func(http.Handler) http.Handler {
+func SetOpenAPIInput(router *openapi3filter.Router, options *openapi3filter.Options) func(http.Handler) http.Handler {
 	if router == nil {
 		panic("SetOpenAPIInput got a nil router")
 	}
@@ -86,6 +83,7 @@ func SetOpenAPIInput(router *openapi3filter.Router, errFn ErrorHandler) func(htt
 				return
 			}
 			input := requestValidationInput(r)
+			input.Options = options
 			input.PathParams = pathParams
 			input.Route = route
 
@@ -124,7 +122,7 @@ func VerifyRequest(errFn ErrorHandler) func(http.Handler) http.Handler {
 
 // VerifyResponse validates response against matching openapi routes
 // Requires SetOpenAPIInput middleware to have been called
-func VerifyResponse(errFn ErrorHandler) func(http.Handler) http.Handler {
+func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			responseBody := &bytes.Buffer{}
@@ -158,11 +156,9 @@ func VerifyResponse(errFn ErrorHandler) func(http.Handler) http.Handler {
 			}
 
 			responseInput := &openapi3filter.ResponseValidationInput{
-				Header: wrapped.Header(),
-				Status: statusCode,
-				Options: &openapi3filter.Options{
-					IncludeResponseStatus: true,
-				},
+				Header:                 wrapped.Header(),
+				Status:                 statusCode,
+				Options:                options,
 				RequestValidationInput: input,
 			}
 			responseInput.SetBodyBytes(responseBody.Bytes())

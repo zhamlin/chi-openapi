@@ -143,7 +143,7 @@ func TestRouterVerifyRequestMiddleware(t *testing.T) {
 	}
 
 	r := NewRouter().
-		With(SetOpenAPIInput(filterRouter, errorHandler(t))).
+		With(SetOpenAPIInput(filterRouter, nil)).
 		With(VerifyRequest(errorHandler(t)))
 	r.UseRouter(dummyR)
 
@@ -265,8 +265,8 @@ func TestRouterVerifyResponse(t *testing.T) {
 	}
 	r := NewRouter().
 		With(jsonHeader).
-		With(SetOpenAPIInput(filterRouter, errorHandler(t))).
-		With(VerifyResponse(errorHandler(t)))
+		With(SetOpenAPIInput(filterRouter, nil)).
+		With(VerifyResponse(errorHandler(t), nil))
 	r.Mount("/", router)
 
 	tests := []struct {
@@ -617,8 +617,8 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify response", func(b *testing.B) {
 		r := NewRouter().
 			With(jsonHeader).
-			With(SetOpenAPIInput(filterRouter, errorHandler(b))).
-			With(VerifyResponse(errorHandler(b)))
+			With(SetOpenAPIInput(filterRouter, nil)).
+			With(VerifyResponse(errorHandler(b), nil))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
@@ -642,7 +642,7 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify request", func(b *testing.B) {
 		r := NewRouter().
 			With(jsonHeader).
-			With(SetOpenAPIInput(filterRouter, errorHandler(b))).
+			With(SetOpenAPIInput(filterRouter, nil)).
 			With(VerifyRequest(errorHandler(b)))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
@@ -658,9 +658,9 @@ func BenchmarkRouter(b *testing.B) {
 	b.Run("verify request and response", func(b *testing.B) {
 		r := NewRouter().
 			With(jsonHeader).
-			With(SetOpenAPIInput(filterRouter, errorHandler(b))).
+			With(SetOpenAPIInput(filterRouter, nil)).
 			With(VerifyRequest(errorHandler(b))).
-			With(VerifyResponse(errorHandler(b)))
+			With(VerifyResponse(errorHandler(b), nil))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
