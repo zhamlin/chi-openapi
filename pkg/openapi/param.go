@@ -179,9 +179,6 @@ func ParamsFromObj(obj interface{}, schemas Schemas) (openapi3.Parameters, error
 // Used for validating query params, converts ints to floats.
 func interfaceSlice(slice interface{}) []interface{} {
 	s := reflect.ValueOf(slice)
-	if s.Kind() != reflect.Slice {
-		panic("InterfaceSlice() given a non-slice type")
-	}
 
 	ret := make([]interface{}, s.Len())
 	for i := 0; i < s.Len(); i++ {

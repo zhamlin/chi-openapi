@@ -194,15 +194,16 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 			return reflect.Value{}, err
 		}
 
+		queryLocation := openapi.GetParameterType(field.Tag)
+		if queryLocation.IsValid() {
+			continue
+		}
+
 		if container.HasType(field.Type) {
 			inputTypes = append(inputTypes, field.Type)
 			continue
 		}
 
-		queryLocation := openapi.GetParameterType(field.Tag)
-		if queryLocation.IsValid() {
-			continue
-		}
 		inputTypes = append(inputTypes, field.Type)
 
 		// check to see if there is a jsonBody
@@ -270,13 +271,27 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 					if !fValue.IsValid() {
 						return fmt.Errorf("invalid value for type: %v", field.Type)
 					}
-					v, err := openapi.VarToInterface(fValue.Interface())
+
+					if container.HasType(field.Type) && fValue.Kind() == reflect.String {
+						dynamicFuncType := reflect.FuncOf([]reflect.Type{field.Type}, []reflect.Type{field.Type}, false)
+						dynamicFunc := func(in []reflect.Value) []reflect.Value {
+							return []reflect.Value{in[0]}
+						}
+						fn := reflect.MakeFunc(dynamicFuncType, dynamicFunc)
+						value, err := container.Execute(fn.Interface(), fValue.Interface())
+						if err != nil {
+							return err
+						}
+						fValue = reflect.ValueOf(value)
+					}
+
+					_, err = openapi.VarToInterface(fValue.Interface())
 					if err != nil {
 						return err
 					}
-					if err := p.Schema.Value.VisitJSON(v); err != nil {
-						return err
-					}
+					// if err := p.Schema.Value.VisitJSON(v); err != nil {
+					// 	return err
+					// }
 					argObj.Field(i).Set(fValue)
 					continue
 				}
