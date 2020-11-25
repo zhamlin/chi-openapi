@@ -71,10 +71,7 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 	if schemas != nil {
 		// if we've already loaded this type, return a reference
 		if obj, has := schemas[name]; has {
-			return &openapi3.SchemaRef{
-				Ref:   componentSchemasPath + name,
-				Value: obj.Value,
-			}
+			return openapi3.NewSchemaRef(componentSchemasPath+name, obj.Value)
 		}
 	}
 
@@ -175,7 +172,6 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 			return openapi3.NewSchemaRef(componentSchemasPath+name, schemas[name].Value)
 		}
 	default:
-		fmt.Println("DEFAULT", typ.Kind())
 	}
 	return openapi3.NewSchemaRef("", schema)
 }

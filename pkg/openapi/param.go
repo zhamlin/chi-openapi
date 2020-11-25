@@ -109,7 +109,7 @@ const componentParamsPath = "#/components/parameters/"
 
 var errNoLocation = fmt.Errorf("no parameter location")
 
-func paramFromStructField(field reflect.StructField) (*openapi3.ParameterRef, error) {
+func paramFromStructField(field reflect.StructField, schemas Schemas) (*openapi3.ParameterRef, error) {
 	param := GetParameterType(field.Tag)
 	if param.In == "" {
 		return nil, fmt.Errorf("field '%v': %w", field.Name, errNoLocation)
@@ -123,7 +123,7 @@ func paramFromStructField(field reflect.StructField) (*openapi3.ParameterRef, er
 		}
 	}
 
-	param.Schema = schemaFromType(field.Type, nil, nil)
+	param.Schema = schemaFromType(field.Type, nil, schemas)
 
 	// load schema tags
 	for name, fn := range schemaFuncTags {
@@ -147,7 +147,7 @@ func paramFromStructField(field reflect.StructField) (*openapi3.ParameterRef, er
 
 var ErrNotStruct = fmt.Errorf("expected a struct")
 
-func ParamsFromType(typ reflect.Type) (openapi3.Parameters, error) {
+func ParamsFromType(typ reflect.Type, schemas Schemas) (openapi3.Parameters, error) {
 	if typ.Kind() != reflect.Struct {
 		return openapi3.Parameters{}, fmt.Errorf("got %v: %w", typ.Kind(), ErrNotStruct)
 	}
@@ -157,7 +157,7 @@ func ParamsFromType(typ reflect.Type) (openapi3.Parameters, error) {
 		field := typ.Field(i)
 		var paramRef *openapi3.ParameterRef
 		var err error
-		paramRef, err = paramFromStructField(field)
+		paramRef, err = paramFromStructField(field, schemas)
 		if err != nil {
 			// ignore this field
 			if errors.Is(err, errNoLocation) {
@@ -170,9 +170,9 @@ func ParamsFromType(typ reflect.Type) (openapi3.Parameters, error) {
 	return objParams, nil
 }
 
-func ParamsFromObj(obj interface{}) (openapi3.Parameters, error) {
+func ParamsFromObj(obj interface{}, schemas Schemas) (openapi3.Parameters, error) {
 	typ := reflect.TypeOf(obj)
-	return ParamsFromType(typ)
+	return ParamsFromType(typ, schemas)
 }
 
 // interfaceSlice converts a slice to an slices of interfaces.

@@ -32,6 +32,7 @@ func (r *ReflectRouter) SetParent(parent *ReflectRouter) *ReflectRouter {
 	}
 	r.c = parent.c
 	r.handleFns = parent.handleFns
+	r.Swagger.Components = parent.Swagger.Components
 	return r
 }
 

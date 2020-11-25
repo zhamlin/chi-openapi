@@ -35,6 +35,7 @@ func NewRouter() *Router {
 			},
 		},
 		defaultResponses: map[string]*openapi3.ResponseRef{},
+		registeredTypes:  map[reflect.Type]*openapi3.SchemaRef{},
 	}
 }
 
@@ -52,6 +53,7 @@ type Router struct {
 
 	prefixPath       string
 	defaultResponses map[string]*openapi3.ResponseRef
+	registeredTypes  map[reflect.Type]*openapi3.SchemaRef
 }
 
 // Use appends one or more middlewares onto the Router stack.
@@ -231,4 +233,10 @@ func (r *Router) SetStatusDefault(status int, description string, obj interface{
 // at the operation level
 func (r *Router) SetDefaultJSON(description string, obj interface{}) {
 	r.setStatusDefault("default", description, obj)
+}
+
+func (r *Router) RegisterType(obj interface{}, schema *openapi3.Schema) {
+	typ := reflect.TypeOf(obj)
+	name := openapi.GetTypeName(typ)
+	r.Swagger.Components.Schemas[name] = openapi3.NewSchemaRef("", schema)
 }

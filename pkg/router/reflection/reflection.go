@@ -175,7 +175,7 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 	params, has := components.Parameters[arg]
 	if !has {
 		var err error
-		params, err = openapi.ParamsFromType(arg)
+		params, err = openapi.ParamsFromType(arg, components.Schemas)
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -234,13 +234,16 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 	dynamicFuncType := reflect.FuncOf(inputTypes, []reflect.Type{arg, errType}, false)
 	dynamicFunc := func(in []reflect.Value) []reflect.Value {
 		argObj := reflect.New(arg).Elem()
-		ctx, ok := in[0].Interface().(context.Context)
+		popIn := func() reflect.Value {
+			val := in[0]
+			in = in[1:]
+			return val
+		}
+		ctx, ok := popIn().Interface().(context.Context)
 		if !ok {
 			err := fmt.Errorf("expected the first arg to be context.Context, got %v", in[0].Type())
 			return []reflect.Value{argObj, reflect.ValueOf(err)}
 		}
-		// remove the context from this list
-		in = in[1:]
 
 		input, err := router.InputFromCTX(ctx)
 		if err != nil {
@@ -280,11 +283,7 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 				if len(in) >= 1 {
 					// grab the first item, this array is in order that
 					// the struct fields were parsed in
-					argValue := in[0]
-					argObj.Field(i).Set(argValue)
-
-					// remove the value we just used
-					in = in[1:]
+					argObj.Field(i).Set(popIn())
 				}
 
 			}

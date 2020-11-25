@@ -17,6 +17,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi"
+	"github.com/xtgo/uuid"
 )
 
 // jsonHeader sets the content type to application/json
@@ -476,6 +477,71 @@ func TestRouterMapComponents(t *testing.T) {
                     }
                   }
                 },
+                "description": "OK"
+              }
+            }
+          }
+        }
+      }
+    }
+    `)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRouterCustomTypeParam(t *testing.T) {
+	router := NewRouter()
+	uuidSchema := openapi3.NewSchema().
+		WithPattern("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+	uuidSchema.Type = "string"
+	router.RegisterType(uuid.UUID{}, uuidSchema)
+
+	router.Get("/", responseHandler, []Option{
+		Params(struct {
+			ID uuid.UUID `query:"id"`
+		}{}),
+		JSONResponse(http.StatusOK, "OK", nil),
+	})
+
+	r := NewRouter().With(jsonHeader)
+	r.Mount("/", router)
+
+	spec, err := r.GenerateSpec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = JSONDiff(t, spec, `
+    {
+      "components": {
+        "schemas": {
+          "UUID": {
+            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "type": "string"
+          }
+        }
+      },
+      "info": {
+        "title": "Title",
+        "version": "0.0.1"
+      },
+      "openapi": "3.0.0",
+      "paths": {
+        "/": {
+          "get": {
+            "parameters": [
+              {
+                "style": "form",
+                "explode": true,
+                "in": "query",
+                "name": "id",
+                "schema": {
+                  "$ref": "#/components/schemas/UUID"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
                 "description": "OK"
               }
             }

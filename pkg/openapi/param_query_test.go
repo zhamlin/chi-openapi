@@ -129,7 +129,7 @@ func TestLoadQueryParam(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params, err := ParamsFromObj(test.obj)
+			params, err := ParamsFromObj(test.obj, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

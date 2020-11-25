@@ -62,7 +62,7 @@ func JSONBody(description string, model interface{}) Option {
 func Params(model interface{}) Option {
 	return func(s *openapi3.Swagger, o Operation) Operation {
 		var err error
-		o.Parameters, err = openapi.ParamsFromObj(model)
+		o.Parameters, err = openapi.ParamsFromObj(model, s.Components.Schemas)
 		if err != nil {
 			panic(err)
 		}
