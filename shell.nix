@@ -7,6 +7,7 @@ let
     go-tools
     gopls
     goimports
+    golangci-lint
     (callPackage ./nix/pkgs/enumer.nix { })
   ];
 
