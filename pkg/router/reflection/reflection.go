@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"reflect"
 	"unicode"
@@ -98,11 +99,9 @@ func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Comp
 			return
 		}
 
-		// only time we have two returns is when the func
-		// is returning a success object and an error
-		if typ.NumOut() == 2 {
-			fns.Success(w, r, result)
-		}
+		// alwasy try to call the success function
+		// its up to the success function to handle a nil result
+		fns.Success(w, r, result)
 	}, nil
 }
 
@@ -187,6 +186,11 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 	// find anything that isn't a query param and try to load it
 	for i := 0; i < arg.NumField(); i++ {
 		field := arg.Field(i)
+		fieldType := field.Type
+
+		if fieldType.Kind() == reflect.Ptr {
+			fieldType = fieldType.Elem()
+		}
 
 		// throw an error on private fields
 		if !unicode.IsUpper(rune(field.Name[0])) {
@@ -199,18 +203,18 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 			continue
 		}
 
-		if container.HasType(field.Type) {
-			inputTypes = append(inputTypes, field.Type)
+		if container.HasType(fieldType) {
+			inputTypes = append(inputTypes, fieldType)
 			continue
 		}
 
-		inputTypes = append(inputTypes, field.Type)
+		inputTypes = append(inputTypes, fieldType)
 
 		// check to see if there is a jsonBody
-		schema, has := components.Schemas[openapi.GetTypeName(field.Type)]
+		schema, has := components.Schemas[openapi.GetTypeName(fieldType)]
 		if !has {
-			if field.Type.Kind() != reflect.Struct {
-				return reflect.Value{}, fmt.Errorf("unknown type: %v", field.Type)
+			if fieldType.Kind() != reflect.Struct {
+				return reflect.Value{}, fmt.Errorf("unknown type: %v", fieldType)
 			}
 			// not a recognized json body, so try to create it via
 			fn, err := createLoadStructFunc(field.Type, components, container)
@@ -254,6 +258,7 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 		err = func() error {
 			for i := 0; i < arg.NumField(); i++ {
 				field := arg.Field(i)
+				fieldType := field.Type
 				queryLocation := openapi.GetParameterType(field.Tag)
 				if queryLocation.IsValid() {
 					p := params.GetByInAndName(queryLocation.In, queryLocation.Name)
@@ -261,9 +266,9 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 					var err error
 					switch p.In {
 					case openapi3.ParameterInQuery:
-						fValue, err = openapi.LoadQueryParam(input.Request, field.Type, p, container)
+						fValue, err = openapi.LoadQueryParam(input.Request, fieldType, p, container)
 					case openapi3.ParameterInPath:
-						fValue, err = openapi.LoadPathParam(input.PathParams, p, field.Type, container)
+						fValue, err = openapi.LoadPathParam(input.PathParams, p, fieldType, container)
 					}
 					if err != nil {
 						// if this param isn't required we don't care about the error
@@ -315,6 +320,9 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 			return []reflect.Value{argObj, reflect.ValueOf(err)}
 		}
 		if err := json.NewDecoder(r.Body).Decode(argObj.Interface()); err != nil {
+			if arg.Kind() != reflect.Ptr {
+				argObj = argObj.Elem()
+			}
 			var jsonErr *json.SyntaxError
 			if errors.As(err, &jsonErr) {
 				input, err := router.InputFromCTX(r.Context())
@@ -332,19 +340,28 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 					return []reflect.Value{argObj, reflect.ValueOf(err)}
 				}
 				// because is is not required, return an empty result
-				return []reflect.Value{argObj.Elem(), {}}
-			} else {
+				return []reflect.Value{argObj, {}}
+			}
+			if errors.Is(err, io.EOF) {
+				if len(schema.Value.Required) == 0 {
+					return []reflect.Value{argObj, reflect.Zero(errType)}
+				}
 				return []reflect.Value{argObj, reflect.ValueOf(err)}
 			}
-		}
-		v, err := openapi.VarToInterface(argObj.Elem().Interface())
-		if err != nil {
 			return []reflect.Value{argObj, reflect.ValueOf(err)}
+
 		}
-		if err := schema.Value.VisitJSON(v); err != nil {
-			return []reflect.Value{argObj, reflect.ValueOf(err)}
+		if arg.Kind() != reflect.Ptr {
+			argObj = argObj.Elem()
 		}
-		return []reflect.Value{argObj.Elem(), reflect.Zero(errType)}
+		// v, err := openapi.VarToInterface(argObj.Interface())
+		// if err != nil {
+		// 	return []reflect.Value{argObj, reflect.ValueOf(err)}
+		// }
+		// if err := schema.Value.VisitJSON(v); err != nil {
+		// 	return []reflect.Value{argObj, reflect.ValueOf(err)}
+		// }
+		return []reflect.Value{argObj, reflect.Zero(errType)}
 	}
 	return reflect.MakeFunc(dynamicFuncType, dynamicFunc)
 }

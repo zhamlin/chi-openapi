@@ -117,7 +117,9 @@ func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(ht
 			wrapped := httpsnoop.Wrap(w, httpsnoop.Hooks{
 				WriteHeader: func(next httpsnoop.WriteHeaderFunc) httpsnoop.WriteHeaderFunc {
 					return func(code int) {
-						statusCode = code
+						if statusCode == 0 {
+							statusCode = code
+						}
 					}
 				},
 				Write: func(next httpsnoop.WriteFunc) httpsnoop.WriteFunc {
@@ -152,8 +154,26 @@ func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(ht
 
 			err = openapi3filter.ValidateResponse(r.Context(), responseInput)
 			if err != nil {
-				errFn(w, r, err)
-				return
+				responseErr := err.(*openapi3filter.ResponseError)
+				var parseErr *openapi3filter.ParseError
+				// ignore any attemp to parse the body on an optional return type
+				if errors.As(responseErr.Err, &parseErr) {
+					if errors.Is(parseErr.RootCause(), io.EOF) {
+						response, has := responseInput.RequestValidationInput.Route.Operation.Responses[fmt.Sprintf("%d", statusCode)]
+						if has {
+							if mt := response.Value.Content.Get("application/json"); mt != nil {
+								if len(mt.Schema.Value.Required) != 0 {
+									errFn(w, r, err)
+									return
+								}
+							}
+						}
+
+					}
+				} else {
+					errFn(w, r, err)
+					return
+				}
 			}
 			h := w.Header()
 			for name, value := range wrapped.Header() {

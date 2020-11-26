@@ -58,6 +58,9 @@ func strToValue(str string, typ reflect.Type, c *container.Container) (reflect.V
 }
 
 func queryValueFn(value string, typ reflect.Type, c *container.Container) (reflect.Value, error) {
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
 	const delim = ","
 	v, err := strToValue(value, typ, c)
 	if err != nil {
