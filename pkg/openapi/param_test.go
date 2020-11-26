@@ -7,10 +7,6 @@ import (
 	"chi-openapi/pkg/openapi"
 )
 
-type definedStruct struct {
-	Random int
-}
-
 func TestParams(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -184,7 +184,7 @@ func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(ht
 				}
 			}
 			w.WriteHeader(statusCode)
-			w.Write(responseBody.Bytes())
+			_, _ = w.Write(responseBody.Bytes())
 		})
 	}
 }

@@ -44,8 +44,7 @@ func (g *graph) AddEdge(from, to reflect.Type) {
 type vertexStatus int
 
 const (
-	vStatusUnmarked vertexStatus = iota
-	vStatusTemporary
+	vStatusTemporary vertexStatus = iota
 	vStatusPermanent
 )
 
@@ -137,7 +136,6 @@ func (c *Container) Provide(fn interface{}) error {
 		return fmt.Errorf("expected a function, got: %v", fnTyp)
 	}
 
-	provides := []reflect.Type{}
 	errLocation, err := getErrorLocation(fnTyp)
 	if err != nil {
 		return err
@@ -178,7 +176,6 @@ func (c *Container) Provide(fn interface{}) error {
 			}
 			c.Graph.AddEdge(dep, out)
 		}
-		provides = append(provides)
 	}
 	return nil
 }

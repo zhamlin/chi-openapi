@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path"
 	"reflect"
+	"runtime"
 
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/openapi/operations"
@@ -129,6 +130,10 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Method adds routes for `pattern` that matches the `method` HTTP method.
 func (r *Router) Method(method, path string, handler http.Handler, options []operations.Option) {
 	r.MethodFunc(method, path, handler.ServeHTTP, options)
+}
+
+func getFunctionName(i interface{}) string {
+	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
 // MethodFunc adds routes for `pattern` that matches the `method` HTTP method.

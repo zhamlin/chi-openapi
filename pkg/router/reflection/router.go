@@ -1,12 +1,16 @@
 package reflection
 
 import (
+	"chi-openapi/internal/camelcase"
 	"chi-openapi/internal/container"
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/openapi/operations"
 	"chi-openapi/pkg/router"
 	"fmt"
 	"net/http"
+	"reflect"
+	"runtime"
+	"strings"
 )
 
 type middleware func(next http.Handler) http.Handler
@@ -75,8 +79,24 @@ func (r *ReflectRouter) Mount(path string, handler http.Handler) {
 	}
 }
 
+func getFunctionName(i interface{}) string {
+	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+}
+
 // MethodFunc adds routes for `pattern` that matches the `method` HTTP method.
 func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, options []operations.Option, middleware ...middleware) {
+	name := getFunctionName(handler)
+	if name != "" {
+		values := strings.Split(name, ".")
+		if len(values) > 1 {
+			name = values[1]
+			entries := camelcase.Split(name)
+			if len(entries) > 1 {
+				options = append(options, operations.ID(strings.ToLower(entries[0])+strings.Join(entries[1:], "")))
+			}
+		}
+	}
+
 	o := operations.Operation{}
 	for _, option := range options {
 		option(r.Swagger, o)

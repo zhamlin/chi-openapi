@@ -15,6 +15,20 @@ type Operation struct {
 type Option func(*openapi3.Swagger, Operation) Operation
 type Options []Option
 
+func ID(id string) Option {
+	return func(_ *openapi3.Swagger, o Operation) Operation {
+		o.OperationID = id
+		return o
+	}
+}
+
+func Tags(tags ...string) Option {
+	return func(_ *openapi3.Swagger, o Operation) Operation {
+		o.Tags = tags
+		return o
+	}
+}
+
 func Deprecated() Option {
 	return func(_ *openapi3.Swagger, o Operation) Operation {
 		o.Deprecated = true

@@ -18,10 +18,9 @@ import (
 )
 
 var (
-	responseWriterType = reflect.TypeOf((*http.ResponseWriter)(nil)).Elem()
-	requestPtrType     = reflect.TypeOf(&http.Request{})
-	ctxType            = reflect.TypeOf((*context.Context)(nil)).Elem()
-	errType            = reflect.TypeOf((*error)(nil)).Elem()
+	requestPtrType = reflect.TypeOf(&http.Request{})
+	ctxType        = reflect.TypeOf((*context.Context)(nil)).Elem()
+	errType        = reflect.TypeOf((*error)(nil)).Elem()
 )
 
 type RequestHandler interface {
@@ -114,15 +113,24 @@ func HandlerFromFnDefault(fnPtr interface{}, fns RequestHandleFns, components op
 func loadArgsIntoContainer(container *container.Container, typ reflect.Type, components openapi.Components) error {
 	// dummy providers, these will be overridden when the container
 	// is Executed
-	container.Provide(func() (http.ResponseWriter, error) {
+	var err error
+	e := func(e error) {
+		if e != nil && err == nil {
+			err = e
+		}
+	}
+	e(container.Provide(func() (http.ResponseWriter, error) {
 		return nil, fmt.Errorf("http.ResponseWriter not provided")
-	})
-	container.Provide(func() (*http.Request, error) {
+	}))
+	e(container.Provide(func() (*http.Request, error) {
 		return nil, fmt.Errorf("*http.Request not provided")
-	})
-	container.Provide(func() (context.Context, error) {
+	}))
+	e(container.Provide(func() (context.Context, error) {
 		return nil, fmt.Errorf("context.Context not provided")
-	})
+	}))
+	if err != nil {
+		return err
+	}
 
 	hasJSONBody := false
 	for i := 0; i < typ.NumIn(); i++ {
@@ -167,7 +175,7 @@ func loadArgsIntoContainer(container *container.Container, typ reflect.Type, com
 	}
 
 	// sanity check, make sure there aren't any cyclic dependencies
-	_, err := container.Graph.Sort()
+	_, err = container.Graph.Sort()
 	return err
 }
 

@@ -93,20 +93,6 @@ var paramFuncTags = map[string]paramTagFunc{
 	},
 }
 
-func getParameterOptions(tag reflect.StructTag) Parameter {
-	for _, name := range paramTags {
-		if tagValue, ok := tag.Lookup(name); ok {
-			return Parameter{openapi3.Parameter{
-				In:   name,
-				Name: tagValue,
-			}}
-		}
-	}
-	return Parameter{}
-}
-
-const componentParamsPath = "#/components/parameters/"
-
 var errNoLocation = fmt.Errorf("no parameter location")
 
 func paramFromStructField(field reflect.StructField, schemas Schemas) (*openapi3.ParameterRef, error) {
