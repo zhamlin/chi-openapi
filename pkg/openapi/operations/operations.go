@@ -44,7 +44,7 @@ func DefaultJSONResponse(description string, model interface{}) Option {
 	}
 }
 
-func JSONBody(description string, model interface{}) Option {
+func JSONBodyRequired(description string, model interface{}) Option {
 	return func(s *openapi3.Swagger, o Operation) Operation {
 		if s.Components.Schemas == nil {
 			s.Components.Schemas = openapi.Schemas{}
@@ -54,6 +54,21 @@ func JSONBody(description string, model interface{}) Option {
 			WithContent(openapi3.NewContentWithJSONSchemaRef(schema)).
 			WithDescription(description).
 			WithRequired(true)
+		o.RequestBody = &openapi3.RequestBodyRef{Value: requestBody}
+		return o
+	}
+}
+
+func JSONBody(description string, model interface{}) Option {
+	return func(s *openapi3.Swagger, o Operation) Operation {
+		if s.Components.Schemas == nil {
+			s.Components.Schemas = openapi.Schemas{}
+		}
+		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
+		requestBody := openapi3.NewRequestBody().
+			WithContent(openapi3.NewContentWithJSONSchemaRef(schema)).
+			WithDescription(description).
+			WithRequired(false)
 		o.RequestBody = &openapi3.RequestBodyRef{Value: requestBody}
 		return o
 	}
