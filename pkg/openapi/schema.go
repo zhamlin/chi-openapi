@@ -188,7 +188,6 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 	requiredFields := []string{}
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		// fieldObj := objValue.Field(i).Elem().Type()
 
 		// json name lookup, ignore -, default to field name
 		val, ok := jsonTagName(field.Tag)
@@ -198,17 +197,11 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 		name := val
 
 		// allow required to be explicitly set
-		if val, ok := field.Tag.Lookup("required"); ok {
-			if tagBoolValue(val) {
-				requiredFields = append(requiredFields, name)
-			}
-		} else {
+		if val, ok := field.Tag.Lookup("required"); ok && tagBoolValue(val) {
+			requiredFields = append(requiredFields, name)
+		} else if field.Type.Kind() != reflect.Ptr {
 			// by default everything except pointer types will be required
-			switch field.Type.Kind() {
-			case reflect.Ptr:
-			default:
-				requiredFields = append(requiredFields, name)
-			}
+			requiredFields = append(requiredFields, name)
 		}
 
 		s := &openapi3.SchemaRef{}
@@ -262,7 +255,24 @@ var schemaFuncTags = map[string]schemaTagFunc{
 		}
 		return nil
 	},
-
+	// all
+	"default": func(value string, has bool, s *openapi3.Schema) error {
+		if has {
+			switch s.Type {
+			case "string":
+				s.Default = value
+			case "boolean":
+				s.Default = tagBoolValue(value)
+			case "integer":
+				n, err := strconv.Atoi(value)
+				if err != nil {
+					return err
+				}
+				s.Default = n
+			}
+		}
+		return nil
+	},
 	// all
 	"readOnly": func(value string, has bool, s *openapi3.Schema) error {
 		if has {

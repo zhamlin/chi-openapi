@@ -182,6 +182,28 @@ func TestSchema(t *testing.T) {
               ]
             }
         `},
+		{
+			name: "pointer not required",
+			obj: struct {
+				String   *string `json:"string"`
+				Required string  `json:"required"`
+			}{},
+			expected: `
+            {
+              "properties": {
+                "required": {
+                  "type": "string"
+                },
+                "string": {
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "required": [
+                  "required"
+              ]
+            }
+        `},
 	}
 
 	for _, test := range tests {

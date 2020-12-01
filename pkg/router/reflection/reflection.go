@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strconv"
 	"unicode"
 
 	"chi-openapi/internal/container"
@@ -98,7 +99,7 @@ func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Comp
 			return
 		}
 
-		// alwasy try to call the success function
+		// always try to call the success function
 		// its up to the success function to handle a nil result
 		fns.Success(w, r, result)
 	}, nil
@@ -177,6 +178,17 @@ func loadArgsIntoContainer(container *container.Container, typ reflect.Type, com
 	// sanity check, make sure there aren't any cyclic dependencies
 	_, err = container.Graph.Sort()
 	return err
+}
+
+type QueryParamError struct {
+	Name     string
+	Location string
+	Reason   string
+	Input    string
+}
+
+func (e QueryParamError) Error() string {
+	return fmt.Sprintf("%s@'%s' error: %s", e.Name, e.Location, e.Reason)
 }
 
 func createLoadStructFunc(arg reflect.Type, components openapi.Components, container *container.Container) (reflect.Value, error) {
@@ -280,13 +292,26 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 					}
 					if err != nil {
 						// if this param isn't required we don't care about the error
-						if p.Required {
-							return fmt.Errorf("failed loading param '%+v': %w", p, err)
+						// if p.Required {
+						var numError *strconv.NumError
+						if errors.As(err, &numError) {
+							_ = numError.Num
+							return QueryParamError{
+								Location: p.In,
+								Name:     p.Name,
+								Reason:   numError.Error(),
+								Input:    numError.Num,
+							}
 						}
+						// }
+						return fmt.Errorf("failed loading param '%+v': %w", p, err)
 						continue
 					}
 					if !fValue.IsValid() {
-						return fmt.Errorf("invalid value for type: %v", field.Type)
+
+						return fmt.Errorf("unknown type for type: (%v), %v",
+							field.Type.PkgPath(),
+							field.Type)
 					}
 
 					// _, err = openapi.VarToInterface(fValue.Interface())

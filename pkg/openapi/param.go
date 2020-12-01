@@ -238,7 +238,7 @@ func LoadParamStruct(obj interface{}, input LoadParamInput) (reflect.Value, erro
 		}
 
 		if err != nil {
-			return fValue, errors.Wrapf(err, "failed loading param '%+v'", p.Value)
+			return fValue, err
 		}
 		if !fValue.IsValid() {
 			return fValue, fmt.Errorf("invalid value for type: %v", field.Type())
