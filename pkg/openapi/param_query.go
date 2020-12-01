@@ -131,7 +131,7 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 				return result, fmt.Errorf("query param '%v' is required", param.Name)
 			}
 			if defValue := param.Schema.Value.Default; defValue != nil {
-				result = reflect.ValueOf(defValue)
+				return reflect.ValueOf(defValue), nil
 			}
 			return reflect.New(typ).Elem(), nil
 		}
