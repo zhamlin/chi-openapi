@@ -16,5 +16,5 @@ func LoadPathParam(paths map[string]string, p *openapi3.Parameter, typ reflect.T
 	if !has {
 		return reflect.Value{}, fmt.Errorf("no path found for the param: %v", p.Name)
 	}
-	return strToValue(value, typ, c)
+	return strToValue(value, typ, c, p.Schema.Value)
 }

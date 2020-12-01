@@ -28,7 +28,7 @@ func jsonTagName(tag reflect.StructTag) (string, bool) {
 	return results[0], true
 }
 
-func strToValue(str string, typ reflect.Type, c *container.Container) (reflect.Value, error) {
+func strToValue(str string, typ reflect.Type, c *container.Container, schema *openapi3.Schema) (reflect.Value, error) {
 	if c != nil && c.HasType(typ) {
 		value, err := c.CreateType(typ, str)
 		if err != nil {
@@ -57,24 +57,25 @@ func strToValue(str string, typ reflect.Type, c *container.Container) (reflect.V
 	return reflect.Value{}, nil
 }
 
-func queryValueFn(value string, typ reflect.Type, c *container.Container) (reflect.Value, error) {
+func queryValueFn(value string, typ reflect.Type, c *container.Container, schema *openapi3.Schema) (reflect.Value, error) {
 	if typ.Kind() == reflect.Ptr {
 		typ = typ.Elem()
 	}
-	const delim = ","
-	v, err := strToValue(value, typ, c)
+	v, err := strToValue(value, typ, c, schema)
 	if err != nil {
 		return v, err
 	}
 	if v.IsValid() {
 		return v, nil
 	}
+
+	const delim = ","
 	switch typ.Kind() {
 	case reflect.Slice, reflect.Array:
 		results := strings.Split(value, delim)
 		obj := reflect.New(typ).Elem()
 		for _, r := range results {
-			v, err := queryValueFn(r, typ.Elem(), c)
+			v, err := queryValueFn(r, typ.Elem(), c, schema)
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -82,6 +83,7 @@ func queryValueFn(value string, typ reflect.Type, c *container.Container) (refle
 		}
 		return obj, nil
 	}
+
 	return reflect.Value{}, fmt.Errorf("unknown type: %v", typ)
 }
 
@@ -100,7 +102,7 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 			return result, fmt.Errorf("structs are not supported for this format")
 		}
 		value := q.Get(param.Name)
-		return queryValueFn(value, typ, c)
+		return queryValueFn(value, typ, c, param.Schema.Value)
 	case queryFormat{true, "form"}:
 		// handle structs differently than the rest
 		// all of the structs field are going to be inlined
@@ -113,7 +115,7 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 					continue
 				}
 				if v, has := q[jsonTag]; has && len(v) == 1 {
-					value, err := queryValueFn(v[0], field.Type, c)
+					value, err := queryValueFn(v[0], field.Type, c, param.Schema.Value)
 					if err != nil {
 						return value, err
 					}
@@ -128,16 +130,19 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 			if param.Required {
 				return result, fmt.Errorf("query param '%v' is required", param.Name)
 			}
+			if defValue := param.Schema.Value.Default; defValue != nil {
+				result = reflect.ValueOf(defValue)
+			}
 			return reflect.New(typ).Elem(), nil
 		}
 
 		if len(values) == 1 && param.Schema.Value.Type != "array" {
-			return strToValue(values[0], typ, nil)
+			return strToValue(values[0], typ, c, param.Schema.Value)
 		}
 
 		obj := reflect.New(typ).Elem()
 		for _, r := range values {
-			v, err := strToValue(r, typ.Elem(), nil)
+			v, err := strToValue(r, typ.Elem(), c, param.Schema.Value)
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -157,12 +162,32 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 				continue
 			}
 			queryName := fmt.Sprintf("%s[%s]", param.Name, jsonTag)
-			if v, has := q[queryName]; has && len(v) == 1 {
-				value, err := queryValueFn(v[0], field.Type, c)
+			v, has := q[queryName]
+			if has && len(v) == 1 {
+				value, err := queryValueFn(v[0], field.Type, c, param.Schema.Value)
 				if err != nil {
 					return value, err
 				}
 				obj.Field(i).Set(value)
+				continue
+			}
+
+			if !has {
+				defaultTag, ok := field.Tag.Lookup("default")
+				if ok {
+					value := reflect.Value{}
+					switch field.Type.Kind() {
+					case reflect.Int:
+						n, err := strconv.Atoi(defaultTag)
+						if err != nil {
+							return value, err
+						}
+						value = reflect.ValueOf(n)
+					case reflect.String:
+						value = reflect.ValueOf(defaultTag)
+					}
+					obj.Field(i).Set(value)
+				}
 			}
 		}
 		return obj, nil
