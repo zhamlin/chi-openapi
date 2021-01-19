@@ -1,4 +1,4 @@
-module chi-openapi
+module github.com/zhamlin/chi-openapi
 
 go 1.15
 

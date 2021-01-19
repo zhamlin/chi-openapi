@@ -3,8 +3,8 @@ package openapi_test
 import (
 	"testing"
 
-	. "chi-openapi/internal/testing"
-	"chi-openapi/pkg/openapi"
+	. "github.com/zhamlin/chi-openapi/internal/testing"
+	"github.com/zhamlin/chi-openapi/pkg/openapi"
 )
 
 func TestParams(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	. "chi-openapi/internal/testing"
-	. "chi-openapi/pkg/openapi/operations"
+	. "github.com/zhamlin/chi-openapi/internal/testing"
+	. "github.com/zhamlin/chi-openapi/pkg/openapi/operations"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"

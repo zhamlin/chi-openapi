@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"chi-openapi/pkg/openapi"
-	. "chi-openapi/pkg/openapi/operations"
-	"chi-openapi/pkg/router"
+	"github.com/zhamlin/chi-openapi/pkg/openapi"
+	. "github.com/zhamlin/chi-openapi/pkg/openapi/operations"
+	"github.com/zhamlin/chi-openapi/pkg/router"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"

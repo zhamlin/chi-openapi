@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"chi-openapi/pkg/openapi/operations"
-	"chi-openapi/pkg/router"
-	"chi-openapi/pkg/router/reflection"
+	"github.com/zhamlin/chi-openapi/pkg/openapi/operations"
+	"github.com/zhamlin/chi-openapi/pkg/router"
+	"github.com/zhamlin/chi-openapi/pkg/router/reflection"
 
 	"github.com/go-chi/chi"
 )
@@ -65,7 +65,7 @@ func chiOpenAPIRouter() http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("chi-openapi spec:\n%s\n", str)
+	fmt.Printf("github.com/zhamlin/chi-openapi spec:\n%s\n", str)
 	return r
 }
 
@@ -102,7 +102,7 @@ func testGetRequest(normal, openapi, reflection http.Handler) {
 			panic("wrong name")
 		}
 	}
-	// chi-openapi router
+	// github.com/zhamlin/chi-openapi router
 	{
 		recorder := httptest.NewRecorder()
 		getResponse := basicGetResponse{}
@@ -115,7 +115,7 @@ func testGetRequest(normal, openapi, reflection http.Handler) {
 		}
 	}
 
-	// chi-openapi reflection router
+	// github.com/zhamlin/chi-openapi reflection router
 	{
 		recorder := httptest.NewRecorder()
 		getResponse := basicGetResponse{}

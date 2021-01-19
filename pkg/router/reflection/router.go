@@ -1,10 +1,10 @@
 package reflection
 
 import (
-	"chi-openapi/pkg/container"
-	"chi-openapi/pkg/openapi"
-	"chi-openapi/pkg/openapi/operations"
-	"chi-openapi/pkg/router"
+	"github.com/zhamlin/chi-openapi/pkg/container"
+	"github.com/zhamlin/chi-openapi/pkg/openapi"
+	"github.com/zhamlin/chi-openapi/pkg/openapi/operations"
+	"github.com/zhamlin/chi-openapi/pkg/router"
 	"fmt"
 	"net/http"
 )

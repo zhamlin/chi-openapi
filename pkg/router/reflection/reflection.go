@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"unicode"
 
-	"chi-openapi/pkg/container"
-	"chi-openapi/pkg/openapi"
-	"chi-openapi/pkg/router"
+	"github.com/zhamlin/chi-openapi/pkg/container"
+	"github.com/zhamlin/chi-openapi/pkg/openapi"
+	"github.com/zhamlin/chi-openapi/pkg/router"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )

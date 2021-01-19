@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"chi-openapi/pkg/openapi"
+	"github.com/zhamlin/chi-openapi/pkg/openapi"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )

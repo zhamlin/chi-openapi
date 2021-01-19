@@ -1,7 +1,7 @@
 package openapi
 
 import (
-	"chi-openapi/pkg/container"
+	"github.com/zhamlin/chi-openapi/pkg/container"
 	"fmt"
 	"net/http"
 	"reflect"

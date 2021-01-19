@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
-	// . "chi-openapi/internal/testing"
+	// . "github.com/zhamlin/chi-openapi/internal/testing"
 )
 
 func TestLoadQueryParam(t *testing.T) {
