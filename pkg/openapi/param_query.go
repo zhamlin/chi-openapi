@@ -1,7 +1,7 @@
 package openapi
 
 import (
-	"chi-openapi/internal/container"
+	"chi-openapi/pkg/container"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -114,12 +114,31 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 				if !ok {
 					continue
 				}
-				if v, has := q[jsonTag]; has && len(v) == 1 {
+				v, has := q[jsonTag]
+				if has && len(v) == 1 {
 					value, err := queryValueFn(v[0], field.Type, c, param.Schema.Value)
 					if err != nil {
 						return value, err
 					}
 					obj.Field(i).Set(value)
+					continue
+				}
+				if !has {
+					defaultTag, ok := field.Tag.Lookup("default")
+					if ok {
+						value := reflect.Value{}
+						switch field.Type.Kind() {
+						case reflect.Int:
+							n, err := strconv.Atoi(defaultTag)
+							if err != nil {
+								return value, err
+							}
+							value = reflect.ValueOf(n)
+						case reflect.String:
+							value = reflect.ValueOf(defaultTag)
+						}
+						obj.Field(i).Set(value)
+					}
 				}
 			}
 			return obj, nil

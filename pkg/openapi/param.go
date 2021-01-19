@@ -134,6 +134,7 @@ func paramFromStructField(field reflect.StructField, schemas Schemas) (*openapi3
 var ErrNotStruct = fmt.Errorf("expected a struct")
 
 func ParamsFromType(typ reflect.Type, schemas Schemas) (openapi3.Parameters, error) {
+	// TODO: Handle pointer?
 	if typ.Kind() != reflect.Struct {
 		return openapi3.Parameters{}, fmt.Errorf("got %v: %w", typ.Kind(), ErrNotStruct)
 	}

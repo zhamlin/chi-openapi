@@ -30,9 +30,10 @@ func NewRouter() *Router {
 			OpenAPI: "3.0.0",
 			Paths:   openapi3.Paths{},
 			Components: openapi3.Components{
-				Schemas:    openapi.Schemas{},
-				Parameters: openapi.Parameters{},
-				Responses:  map[string]*openapi3.ResponseRef{},
+				Schemas:         openapi.Schemas{},
+				Parameters:      openapi.Parameters{},
+				Responses:       map[string]*openapi3.ResponseRef{},
+				SecuritySchemes: map[string]*openapi3.SecuritySchemeRef{},
 			},
 		},
 		defaultResponses: map[string]*openapi3.ResponseRef{},
@@ -43,6 +44,37 @@ func NewRouter() *Router {
 func (r *Router) WithInfo(info openapi.Info) *Router {
 	apiInfo := openapi3.Info(info)
 	r.Swagger.Info = &apiInfo
+	return r
+}
+
+// SecuritySchema represents an openapi3 security scheme
+type SecuritySchema struct {
+	Name                         string
+	SchemeName, Type, Scheme, In string
+}
+
+func (r *Router) WithSecurity(security SecuritySchema) *Router {
+	schema := openapi3.NewSecurityScheme()
+	if security.SchemeName != "" {
+		schema = schema.WithName(security.SchemeName)
+	}
+	if security.Type != "" {
+		schema = schema.WithType(security.Type)
+	}
+	if security.In != "" {
+		schema = schema.WithIn(security.In)
+	}
+	if security.Scheme != "" {
+		schema = schema.WithScheme(security.Scheme)
+	}
+	r.Swagger.Components.SecuritySchemes[security.Name] = &openapi3.SecuritySchemeRef{Value: schema}
+	return r
+}
+
+func (r *Router) SetGlobalSecurity(name string) *Router {
+	r.Swagger.Security.With(openapi3.
+		NewSecurityRequirement().
+		Authenticate(name))
 	return r
 }
 
@@ -138,14 +170,19 @@ func getFunctionName(i interface{}) string {
 
 // MethodFunc adds routes for `pattern` that matches the `method` HTTP method.
 func (r *Router) MethodFunc(method, path string, handler http.HandlerFunc, options []operations.Option) {
+	path = r.prefixPath + path
+
 	o := operations.Operation{}
+	var err error
 	for _, option := range options {
-		o = option(r.Swagger, o)
+		o, err = option(r.Swagger, o)
+		if err != nil {
+			panic(fmt.Sprintf("router [%s %s]: cannot create handler: %v", method, path, err))
+		}
 	}
 
 	r.setDefaultResp(&o.Operation)
 
-	path = r.prefixPath + path
 	r.Mux.MethodFunc(method, path, handler)
 	r.Swagger.AddOperation(path, method, &o.Operation)
 }

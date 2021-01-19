@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"unicode"
 
-	"chi-openapi/internal/container"
+	"chi-openapi/pkg/container"
 	"chi-openapi/pkg/openapi"
 	"chi-openapi/pkg/router"
 
@@ -342,6 +342,8 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 	return reflect.MakeFunc(dynamicFuncType, dynamicFunc), nil
 }
 
+var ErrRequiredJSONBody = fmt.Errorf("expected a request body")
+
 // createJSONBodyLoadFunc creates a function that can create the type passed in
 func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflect.Value {
 	dynamicFuncType := reflect.FuncOf([]reflect.Type{requestPtrType}, []reflect.Type{arg, errType}, false)
@@ -369,8 +371,7 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 				}
 
 				if body.Value.Required {
-					err := fmt.Errorf("Required json body")
-					return []reflect.Value{argObj, reflect.ValueOf(err)}
+					return []reflect.Value{argObj, reflect.ValueOf(ErrRequiredJSONBody)}
 				}
 				// because is is not required, return an empty result
 				return []reflect.Value{argObj, {}}
@@ -379,21 +380,20 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 				if len(schema.Value.Required) == 0 {
 					return []reflect.Value{argObj, reflect.Zero(errType)}
 				}
-				return []reflect.Value{argObj, reflect.ValueOf(err)}
 			}
-			return []reflect.Value{argObj, reflect.ValueOf(err)}
+			return []reflect.Value{argObj, reflect.ValueOf(ErrRequiredJSONBody)}
 
 		}
 		if arg.Kind() != reflect.Ptr {
 			argObj = argObj.Elem()
 		}
-		// v, err := openapi.VarToInterface(argObj.Interface())
-		// if err != nil {
-		// 	return []reflect.Value{argObj, reflect.ValueOf(err)}
-		// }
-		// if err := schema.Value.VisitJSON(v); err != nil {
-		// 	return []reflect.Value{argObj, reflect.ValueOf(err)}
-		// }
+		v, err := openapi.VarToInterface(argObj.Interface())
+		if err != nil {
+			return []reflect.Value{argObj, reflect.ValueOf(err)}
+		}
+		if err := schema.Value.VisitJSON(v); err != nil {
+			return []reflect.Value{argObj, reflect.ValueOf(err)}
+		}
 		return []reflect.Value{argObj, reflect.Zero(errType)}
 	}
 	return reflect.MakeFunc(dynamicFuncType, dynamicFunc)

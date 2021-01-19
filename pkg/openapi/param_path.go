@@ -1,7 +1,7 @@
 package openapi
 
 import (
-	"chi-openapi/internal/container"
+	"chi-openapi/pkg/container"
 	"fmt"
 	"reflect"
 

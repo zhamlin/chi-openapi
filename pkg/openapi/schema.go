@@ -33,12 +33,14 @@ type SchemaInline interface {
 const componentSchemasPath = "#/components/schemas/"
 
 func GetTypeName(typ reflect.Type) string {
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
 	// check to see if the name is set via the SchemaID method
 	name := typ.Name()
 	schemaInterface := reflect.TypeOf((*SchemaID)(nil)).Elem()
 	if typ.Implements(schemaInterface) {
 		objPtr := reflect.New(typ)
-
 		b := objPtr.Elem().Interface().(SchemaID)
 		name = b.SchemaID()
 	}
@@ -98,6 +100,11 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 		}
 		// only support one type of enum
 		schema.Type = "string"
+
+		if schemas != nil {
+			schemas[name] = openapi3.NewSchemaRef("", schema)
+			return openapi3.NewSchemaRef(componentSchemasPath+name, schemas[name].Value)
+		}
 		return openapi3.NewSchemaRef("", schema)
 	}
 

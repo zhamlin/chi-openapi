@@ -6,81 +6,112 @@ import (
 	"reflect"
 )
 
-type loader struct {
-	fn               reflect.Value
-	typ              reflect.Type
-	errorOutLocation int
-
-	// slice of pointers to the graphs edges
-	// relating to this vertex
-	outgoingEdges []*edge
-	incomingEdges []*edge
-}
-
-type edge struct {
+// Edge represents the relationship between two types
+type Edge struct {
 	From reflect.Type
 	To   reflect.Type
 }
 
-type graph struct {
-	Edges    []edge
-	Vertices map[reflect.Type]*loader
+type Edges []*Edge
+
+func (e Edge) Equal(edge Edge) bool {
+	return e.From == edge.From &&
+		e.To == edge.To
 }
 
-func (g *graph) AddEdge(from, to reflect.Type) {
-	e := edge{
+func (e Edges) Contains(t reflect.Type) bool {
+	for _, edge := range e {
+		if edge.From == t {
+			return true
+		}
+	}
+	return false
+}
+
+// Vertex represents a reflect.Type and a function that is used to create it.
+type Vertex struct {
+	// function used to create this type
+	fn reflect.Value
+	// the reflect.Type value that the function will return
+	Typ reflect.Type
+	// the position of the error, if any, from the functions returns
+	errorOutLocation int
+
+	// slice of pointers to the graphs edges relating to this vertex
+	// each edge represents a dependency of the function, incoming being
+	// the arguments required, and outgoing for the values provided from this function
+	OutgoingEdges Edges
+	IncomingEdges Edges
+}
+
+func NewGraph() *Graph {
+	return &Graph{
+		Edges:    []Edge{},
+		Vertexes: map[reflect.Type]*Vertex{},
+	}
+}
+
+type Graph struct {
+	Edges    []Edge
+	Vertexes map[reflect.Type]*Vertex
+}
+
+// AddEdge connects two vertices, in the direction
+// of from -> to
+func (g *Graph) AddEdge(from, to reflect.Type) {
+	e := Edge{
 		From: from,
 		To:   to,
 	}
 	g.Edges = append(g.Edges, e)
-	if vertex, has := g.Vertices[from]; has {
-		vertex.outgoingEdges = append(vertex.outgoingEdges, &e)
+	if vertex, has := g.Vertexes[from]; has {
+		vertex.OutgoingEdges = append(vertex.OutgoingEdges, &e)
 	}
-	if vertex, has := g.Vertices[to]; has {
-		vertex.incomingEdges = append(vertex.incomingEdges, &e)
+	if vertex, has := g.Vertexes[to]; has {
+		vertex.IncomingEdges = append(vertex.IncomingEdges, &e)
 	}
 }
 
-type vertexStatus int
+type status int
 
 const (
-	vStatusTemporary vertexStatus = iota
-	vStatusPermanent
+	statusTemporary status = iota
+	statusPermanent
 )
 
-type vertexMarker map[reflect.Type]vertexStatus
+type vertexMarker map[reflect.Type]status
 
-func (g graph) checkCyclicDepsUtil(l *loader, sorted *[]reflect.Type, marker vertexMarker) error {
-	if status, has := marker[l.typ]; has && status == vStatusPermanent {
+func (g Graph) checkCyclicDeps(l *Vertex, sorted *[]reflect.Type, marker vertexMarker) error {
+	if status, has := marker[l.Typ]; has && status == statusPermanent {
 		return nil
 	}
-	if status, has := marker[l.typ]; has && status == vStatusTemporary {
-		return fmt.Errorf("cyclic dependency on type: %v", l.typ)
+	if status, has := marker[l.Typ]; has && status == statusTemporary {
+		return fmt.Errorf("cyclic dependency on type: %v", l.Typ)
 	}
-	marker[l.typ] = vStatusTemporary
-	for _, e := range l.outgoingEdges {
-		if err := g.checkCyclicDepsUtil(g.Vertices[e.To], sorted, marker); err != nil {
-			return fmt.Errorf("type %v error: %w", l.typ, err)
+	marker[l.Typ] = statusTemporary
+	for _, e := range l.OutgoingEdges {
+		if err := g.checkCyclicDeps(g.Vertexes[e.To], sorted, marker); err != nil {
+			return fmt.Errorf("type %v error: %w", l.Typ, err)
 		}
 	}
-	marker[l.typ] = vStatusPermanent
-	*sorted = append([]reflect.Type{l.typ}, *sorted...)
+	marker[l.Typ] = statusPermanent
+	*sorted = append([]reflect.Type{l.Typ}, *sorted...)
 	return nil
 }
 
-func (g graph) Sort() ([]reflect.Type, error) {
+func (g Graph) Sort() ([]reflect.Type, error) {
 	sortedVerticies := []reflect.Type{}
 	marker := vertexMarker{}
 
 	// quick sanity check on edges
 	for _, e := range g.Edges {
-		if _, has := g.Vertices[e.From]; !has {
+		if _, has := g.Vertexes[e.From]; !has {
 			return []reflect.Type{}, fmt.Errorf("no vertex found for type: %v", e.From)
 		}
 	}
 
-	for _, vertex := range g.Vertices {
-		if err := g.checkCyclicDepsUtil(vertex, &sortedVerticies, marker); err != nil {
+	for _, vertex := range g.Vertexes {
+		if err := g.checkCyclicDeps(vertex, &sortedVerticies, marker); err != nil {
 			return sortedVerticies, err
 		}
 	}
@@ -89,19 +120,16 @@ func (g graph) Sort() ([]reflect.Type, error) {
 
 func NewContainer() *Container {
 	return &Container{
-		Graph: graph{
-			Edges:    []edge{},
-			Vertices: map[reflect.Type]*loader{},
-		},
+		Graph: NewGraph(),
 	}
 }
 
 type Container struct {
-	Graph graph
+	Graph *Graph
 }
 
 func (c *Container) HasType(t reflect.Type) bool {
-	_, has := c.Graph.Vertices[t]
+	_, has := c.Graph.Vertexes[t]
 	return has
 }
 
@@ -126,19 +154,48 @@ func getErrorLocation(fnType reflect.Type) (int, error) {
 	return errLocation, nil
 }
 
-// Provide adds the return types of the function as
-// vertices on a graph and attempts to add edges
-// based on the arguments of the function
-func (c *Container) Provide(fn interface{}) error {
+func MergeGraphs(from, to *Graph) *Graph {
+	// add all vertexes from 'from -> to'
+	for t, v := range from.Vertexes {
+		if _, has := to.Vertexes[t]; !has {
+			to.Vertexes[t] = v
+		}
+	}
+
+	// copy over all edges if they don't already exist
+	for _, edge := range from.Edges {
+		found := false
+		for _, toEdge := range to.Edges {
+			if edge.Equal(toEdge) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			to.Edges = append(to.Edges, edge)
+		}
+	}
+	return to
+}
+
+var ErrNilFunction = errors.New("got nil, expected a function")
+
+// GraphFromFunc takes in a function and returns a graph
+// containing the functions dependencies and what types it returns
+func GraphFromFunc(fn interface{}) (*Graph, error) {
+	if fn == nil {
+		return nil, ErrNilFunction
+	}
+	graph := NewGraph()
 	fnVal := reflect.ValueOf(fn)
 	fnTyp := fnVal.Type()
 	if fnTyp.Kind() != reflect.Func {
-		return fmt.Errorf("expected a function, got: %v", fnTyp)
+		return nil, fmt.Errorf("expected a function, got: %v", fnTyp)
 	}
 
 	errLocation, err := getErrorLocation(fnTyp)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	deps := []reflect.Type{}
@@ -147,12 +204,12 @@ func (c *Container) Provide(fn interface{}) error {
 	}
 	for i := 0; i < fnTyp.NumOut(); i++ {
 		out := fnTyp.Out(i)
-		if _, has := c.Graph.Vertices[out]; !has {
-			outgoingEdges := []*edge{}
-			incomingEdges := []*edge{}
+		if _, has := graph.Vertexes[out]; !has {
+			outgoingEdges := []*Edge{}
+			incomingEdges := []*Edge{}
 
 			// add any edges that already exist for this type
-			for _, e := range c.Graph.Edges {
+			for _, e := range graph.Edges {
 				switch out {
 				case e.From:
 					outgoingEdges = append(outgoingEdges, &e)
@@ -161,22 +218,34 @@ func (c *Container) Provide(fn interface{}) error {
 				}
 			}
 
-			c.Graph.Vertices[out] = &loader{
+			graph.Vertexes[out] = &Vertex{
 				errorOutLocation: errLocation,
-				outgoingEdges:    outgoingEdges,
-				incomingEdges:    incomingEdges,
-				typ:              out,
+				OutgoingEdges:    outgoingEdges,
+				IncomingEdges:    incomingEdges,
+				Typ:              out,
 				fn:               fnVal,
 			}
 		}
 
 		for _, dep := range deps {
 			if dep == out {
-				return fmt.Errorf("cannot need and return the same type: %v", out)
+				return nil, fmt.Errorf("cannot need and return the same type: %v", out)
 			}
-			c.Graph.AddEdge(dep, out)
+			graph.AddEdge(dep, out)
 		}
 	}
+	return graph, nil
+}
+
+// Provide adds the return types of the function as
+// vertexes on a graph and attempts to add edges
+// based on the arguments of the function
+func (c *Container) Provide(fn interface{}) error {
+	newGraph, err := GraphFromFunc(fn)
+	if err != nil {
+		return fmt.Errorf("getting a graph from the function: %w", err)
+	}
+	c.Graph = MergeGraphs(newGraph, c.Graph)
 	return nil
 }
 
@@ -283,7 +352,7 @@ func (c Container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 			continue
 		}
 
-		l, has := c.Graph.Vertices[t]
+		l, has := c.Graph.Vertexes[t]
 		if !has {
 			return vals, fmt.Errorf("don't know how to create type: %v", t)
 		}
@@ -292,8 +361,8 @@ func (c Container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 		}
 
 		// walk down the dependency tree, and create each type
-		for _, edge := range l.incomingEdges {
-			if val, has := c.Graph.Vertices[edge.From]; has {
+		for _, edge := range l.IncomingEdges {
+			if val, has := c.Graph.Vertexes[edge.From]; has {
 				results, err := c.execute(val.fn, val.errorOutLocation, cache, args...)
 				if err != nil {
 					return vals, err
@@ -322,6 +391,7 @@ func (c Container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 	return findError(errLocation, results)
 }
 
+// CreateType returns a newly created value of the supplied type
 func (c Container) CreateType(typ reflect.Type, args ...interface{}) (interface{}, error) {
 	dynamicFuncType := reflect.FuncOf([]reflect.Type{typ}, []reflect.Type{typ}, false)
 	dynamicFunc := func(in []reflect.Value) []reflect.Value {

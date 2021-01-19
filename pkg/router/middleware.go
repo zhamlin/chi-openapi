@@ -61,6 +61,7 @@ func SetOpenAPIInput(router *openapi3filter.Router, options *openapi3filter.Opti
 					switch rError.Reason {
 					case "Path was not found":
 						w.WriteHeader(http.StatusNotFound)
+						w.Write([]byte("Not Found\n"))
 					case "Path doesn't support the HTTP method":
 						w.WriteHeader(http.StatusMethodNotAllowed)
 					}
