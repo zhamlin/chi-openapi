@@ -176,3 +176,40 @@ func BenchmarkLoaderFunc(b *testing.B) {
 		}
 	})
 }
+
+func TestInStruct(t *testing.T) {
+	failErr := failErrT(t)
+	c := NewContainer()
+
+	failErr(c.Provide(func() string {
+		return "10"
+	}))
+
+	failErr(c.Provide(func() int {
+		return 10
+	}))
+
+	failErr(c.Provide(func(p struct {
+		In
+
+		Int    int
+		String string
+	}) (bool, error) {
+		actualInt, err := strconv.Atoi(p.String)
+		if err != nil {
+			return false, err
+		}
+		return actualInt == p.Int, nil
+	}))
+
+	_, err := c.Graph.Sort()
+	failErr(err)
+
+	_, err = c.Execute(func(ok bool) error {
+		if !ok {
+			return fmt.Errorf("not ok")
+		}
+		return nil
+	})
+	failErr(err)
+}

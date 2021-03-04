@@ -7,9 +7,13 @@ import (
 )
 
 func NewContainer() *Container {
-	return &Container{
+	c := &Container{
 		Graph: NewGraph(),
 	}
+	c.Provide(func() In {
+		return In{}
+	})
+	return c
 }
 
 type Container struct {
@@ -49,6 +53,31 @@ func (c *Container) Provide(fn interface{}) error {
 	newGraph, err := GraphFromFunc(fn)
 	if err != nil {
 		return fmt.Errorf("getting a graph from the function: %w", err)
+	}
+	for _, edge := range newGraph.Edges {
+		if edge.hasSpecialInType {
+			// Create a function that will generate the struct with all of it's members set
+			typ := edge.From
+			fieldCount := typ.NumField()
+			fieldTypes := make([]reflect.Type, 0, fieldCount)
+			for i := 0; i < fieldCount; i++ {
+				field := typ.Field(i)
+				fieldTypes = append(fieldTypes, field.Type)
+			}
+			dynamicFuncType := reflect.FuncOf(fieldTypes, []reflect.Type{typ}, false)
+			dynamicFunc := func(in []reflect.Value) []reflect.Value {
+				obj := reflect.New(typ).Elem()
+				for i := 0; i < fieldCount; i++ {
+					field := obj.Field(i)
+					field.Set(in[i])
+				}
+				return []reflect.Value{obj}
+			}
+			fn := reflect.MakeFunc(dynamicFuncType, dynamicFunc)
+			if err := c.Provide(fn.Interface()); err != nil {
+				return err
+			}
+		}
 	}
 	c.Graph = MergeGraphs(newGraph, c.Graph)
 	return nil
@@ -175,6 +204,7 @@ func (c Container) execute(fn reflect.Value, errLocation int, cache map[reflect.
 				createArgs = append(createArgs, results...)
 			}
 		}
+
 		results := l.fn.Call(createArgs)
 		results, err := findError(l.errorOutLocation, results)
 		if err != nil {

@@ -10,6 +10,8 @@ import (
 type Edge struct {
 	From reflect.Type
 	To   reflect.Type
+
+	hasSpecialInType bool
 }
 
 type Edges []*Edge
@@ -120,6 +122,24 @@ func (g Graph) Sort() ([]reflect.Type, error) {
 
 var ErrNilFunction = errors.New("got nil, expected a function")
 
+var inType = reflect.TypeOf(In{})
+
+func isInType(typ reflect.Type) bool {
+	if typ.Kind() != reflect.Struct {
+		return false
+	}
+	fieldCount := typ.NumField()
+	if fieldCount > 0 {
+		for i := 0; i < fieldCount; i++ {
+			field := typ.Field(i)
+			if field.Type.AssignableTo(inType) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GraphFromFunc takes in a function and returns a graph
 // containing the functions dependencies and what types it returns
 func GraphFromFunc(fn interface{}) (*Graph, error) {
@@ -138,10 +158,16 @@ func GraphFromFunc(fn interface{}) (*Graph, error) {
 		return nil, err
 	}
 
-	deps := []reflect.Type{}
-	for i := 0; i < fnTyp.NumIn(); i++ {
-		deps = append(deps, fnTyp.In(i))
+	type graphDep struct {
+		reflect.Type
+		IsInType bool
 	}
+	deps := []graphDep{}
+	for i := 0; i < fnTyp.NumIn(); i++ {
+		fnArgType := fnTyp.In(i)
+		deps = append(deps, graphDep{Type: fnArgType, IsInType: isInType(fnArgType)})
+	}
+
 	for i := 0; i < fnTyp.NumOut(); i++ {
 		out := fnTyp.Out(i)
 		if _, has := graph.Vertexes[out]; !has {
@@ -171,7 +197,8 @@ func GraphFromFunc(fn interface{}) (*Graph, error) {
 			if dep == out {
 				return nil, fmt.Errorf("cannot need and return the same type: %v", out)
 			}
-			graph.AddEdge(dep, out)
+			graph.AddEdge(dep.Type, out)
+			graph.Edges[len(graph.Edges)-1].hasSpecialInType = dep.IsInType
 		}
 	}
 	return graph, nil
