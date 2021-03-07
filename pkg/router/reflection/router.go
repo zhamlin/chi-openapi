@@ -1,12 +1,13 @@
 package reflection
 
 import (
+	"fmt"
+	"net/http"
+
 	"github.com/zhamlin/chi-openapi/pkg/container"
 	"github.com/zhamlin/chi-openapi/pkg/openapi"
 	"github.com/zhamlin/chi-openapi/pkg/openapi/operations"
 	"github.com/zhamlin/chi-openapi/pkg/router"
-	"fmt"
-	"net/http"
 )
 
 type Middleware func(next http.Handler) http.Handler
@@ -49,6 +50,11 @@ func (r *ReflectRouter) SetParent(parent *ReflectRouter) *ReflectRouter {
 
 func (r *ReflectRouter) WithHooks(h Hooks) *ReflectRouter {
 	r.hooks = h
+	return r
+}
+
+func (r *ReflectRouter) WithContainer(c *container.Container) *ReflectRouter {
+	r.c = c
 	return r
 }
 

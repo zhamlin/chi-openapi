@@ -192,6 +192,7 @@ func (e QueryParamError) Error() string {
 }
 
 func createLoadStructFunc(arg reflect.Type, components openapi.Components, container *container.Container) (reflect.Value, error) {
+
 	params, has := components.Parameters[arg]
 	if !has {
 		var err error
@@ -208,10 +209,6 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 		field := arg.Field(i)
 		fieldType := field.Type
 
-		if fieldType.Kind() == reflect.Ptr {
-			fieldType = fieldType.Elem()
-		}
-
 		// throw an error on private fields
 		if !unicode.IsUpper(rune(field.Name[0])) {
 			err := fmt.Errorf("struct '%v' must only contain public fields: field '%v' not public", arg, field.Name)
@@ -226,6 +223,9 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 		if container.HasType(fieldType) {
 			inputTypes = append(inputTypes, fieldType)
 			continue
+		}
+		if fieldType.Kind() == reflect.Ptr {
+			fieldType = fieldType.Elem()
 		}
 
 		inputTypes = append(inputTypes, fieldType)

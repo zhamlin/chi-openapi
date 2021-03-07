@@ -208,7 +208,11 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 			requiredFields = append(requiredFields, name)
 		} else if field.Type.Kind() != reflect.Ptr {
 			// by default everything except pointer types will be required
-			requiredFields = append(requiredFields, name)
+			// check for required tag
+			notRequired := field.Tag.Get("required") == "false"
+			if !notRequired {
+				requiredFields = append(requiredFields, name)
+			}
 		}
 
 		s := &openapi3.SchemaRef{}
