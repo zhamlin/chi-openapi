@@ -151,13 +151,15 @@ func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(ht
 				Options:                options,
 				RequestValidationInput: input,
 			}
-			responseInput.SetBodyBytes(responseBody.Bytes())
+			if responseInput.Body == nil {
+				responseInput.Options.ExcludeResponseBody = true
+			}
 
 			err = openapi3filter.ValidateResponse(r.Context(), responseInput)
 			if err != nil {
 				responseErr := err.(*openapi3filter.ResponseError)
 				var parseErr *openapi3filter.ParseError
-				// ignore any attemp to parse the body on an optional return type
+				// ignore any attempt to parse the body on an optional return type
 				if errors.As(responseErr.Err, &parseErr) {
 					if errors.Is(parseErr.RootCause(), io.EOF) {
 						response, has := responseInput.RequestValidationInput.Route.Operation.Responses[fmt.Sprintf("%d", statusCode)]
