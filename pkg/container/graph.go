@@ -108,7 +108,7 @@ func (g Graph) Sort() ([]reflect.Type, error) {
 	// quick sanity check on edges
 	for _, e := range g.Edges {
 		if _, has := g.Vertexes[e.From]; !has {
-			return []reflect.Type{}, fmt.Errorf("no vertex found for type: %v", e.From)
+			return []reflect.Type{}, fmt.Errorf("no vertex found for type: %v: -> %v", e.From, e.To)
 		}
 	}
 
@@ -163,16 +163,22 @@ func GraphFromFunc(fn interface{}) (*Graph, error) {
 		IsInType bool
 	}
 	deps := []graphDep{}
+
 	for i := 0; i < fnTyp.NumIn(); i++ {
 		fnArgType := fnTyp.In(i)
-		deps = append(deps, graphDep{Type: fnArgType, IsInType: isInType(fnArgType)})
+		deps = append(deps,
+			graphDep{
+				Type:     fnArgType,
+				IsInType: isInType(fnArgType),
+			})
 	}
 
-	for i := 0; i < fnTyp.NumOut(); i++ {
+	outCount := fnTyp.NumOut()
+	for i := 0; i < outCount; i++ {
 		out := fnTyp.Out(i)
 		if _, has := graph.Vertexes[out]; !has {
-			outgoingEdges := []*Edge{}
-			incomingEdges := []*Edge{}
+			outgoingEdges := Edges{}
+			incomingEdges := Edges{}
 
 			// add any edges that already exist for this type
 			for _, e := range graph.Edges {
@@ -192,12 +198,21 @@ func GraphFromFunc(fn interface{}) (*Graph, error) {
 				fn:               fnVal,
 			}
 		}
-
 		for _, dep := range deps {
+			out := fnTyp.Out(i)
+
 			if dep == out {
 				return nil, fmt.Errorf("cannot need and return the same type: %v", out)
 			}
+
 			graph.AddEdge(dep.Type, out)
+			graph.Edges[len(graph.Edges)-1].hasSpecialInType = dep.IsInType
+		}
+	}
+
+	if outCount <= 0 {
+		for _, dep := range deps {
+			graph.AddEdge(dep.Type, nil)
 			graph.Edges[len(graph.Edges)-1].hasSpecialInType = dep.IsInType
 		}
 	}
