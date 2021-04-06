@@ -86,7 +86,7 @@ func DefaultJSONResponse(description string, model interface{}) Option {
 			return o, nil
 		}
 
-		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
+		schema := openapi.SchemaFromObj(model, openapi.Schemas(s.Components.Schemas))
 		resp = resp.WithContent(openapi3.NewContentWithJSONSchemaRef(schema))
 		o.Responses["default"] = &openapi3.ResponseRef{Value: resp}
 		return o, nil
@@ -96,7 +96,7 @@ func DefaultJSONResponse(description string, model interface{}) Option {
 func Params(model interface{}) Option {
 	return func(s *openapi3.Swagger, o Operation) (Operation, error) {
 		var err error
-		o.Parameters, err = openapi.ParamsFromObj(model, s.Components.Schemas)
+		o.Parameters, err = openapi.ParamsFromObj(model, openapi.Schemas(s.Components.Schemas))
 		if err != nil {
 			return o, err
 		}
@@ -104,12 +104,55 @@ func Params(model interface{}) Option {
 	}
 }
 
+func FileResponse(code int, description string) Option {
+	return func(s *openapi3.Swagger, o Operation) (Operation, error) {
+		if o.Responses == nil {
+			o.Responses = openapi3.Responses{}
+
+		}
+
+		schema := openapi3.NewSchema()
+		schema.Type = "string"
+		schema.Format = "binary"
+
+		response := &openapi3.ResponseRef{
+			Value: &openapi3.Response{
+				Description: &description,
+				Content: openapi3.Content{
+					"application/pdf":  openapi3.NewMediaType().WithSchema(schema),
+					"application/tiff": openapi3.NewMediaType().WithSchema(schema),
+				},
+			},
+		}
+		o.Responses[fmt.Sprintf("%d", code)] = response
+		return o, nil
+	}
+}
+
+func FormBody(description string, model interface{}) Option {
+	return func(s *openapi3.Swagger, o Operation) (Operation, error) {
+		if s.Components.Schemas == nil {
+			s.Components.Schemas = openapi3.Schemas{}
+		}
+		schema := openapi.SchemaFromObj(model, openapi.Schemas(s.Components.Schemas))
+		// schema.Value.Extensions = map[string]interface{}{
+		// 	"form": true,
+		// }
+		requestBody := openapi3.NewRequestBody().
+			WithContent(openapi3.NewContentWithFormDataSchemaRef(schema)).
+			WithDescription(description).
+			WithRequired(false)
+		o.RequestBody = &openapi3.RequestBodyRef{Value: requestBody}
+		return o, nil
+	}
+}
+
 func JSONBodyRequired(description string, model interface{}) Option {
 	return func(s *openapi3.Swagger, o Operation) (Operation, error) {
 		if s.Components.Schemas == nil {
-			s.Components.Schemas = openapi.Schemas{}
+			s.Components.Schemas = openapi3.Schemas{}
 		}
-		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
+		schema := openapi.SchemaFromObj(model, openapi.Schemas(s.Components.Schemas))
 		requestBody := openapi3.NewRequestBody().
 			WithContent(openapi3.NewContentWithJSONSchemaRef(schema)).
 			WithDescription(description).
@@ -122,9 +165,9 @@ func JSONBodyRequired(description string, model interface{}) Option {
 func JSONBody(description string, model interface{}) Option {
 	return func(s *openapi3.Swagger, o Operation) (Operation, error) {
 		if s.Components.Schemas == nil {
-			s.Components.Schemas = openapi.Schemas{}
+			s.Components.Schemas = openapi3.Schemas{}
 		}
-		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
+		schema := openapi.SchemaFromObj(model, openapi.Schemas(s.Components.Schemas))
 		requestBody := openapi3.NewRequestBody().
 			WithContent(openapi3.NewContentWithJSONSchemaRef(schema)).
 			WithDescription(description).
@@ -147,7 +190,7 @@ func JSONResponse(code int, description string, model interface{}) Option {
 			o.Responses[fmt.Sprintf("%d", code)] = response
 			return o, nil
 		}
-		schema := openapi.SchemaFromObj(model, s.Components.Schemas)
+		schema := openapi.SchemaFromObj(model, openapi.Schemas(s.Components.Schemas))
 		// TODO: check for content first before just overwriting it
 		// "application/json": NewMediaType().WithSchema(schema),
 		response := &openapi3.ResponseRef{

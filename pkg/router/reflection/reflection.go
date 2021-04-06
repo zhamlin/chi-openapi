@@ -1,11 +1,13 @@
 package reflection
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -148,6 +150,7 @@ func loadArgsIntoContainer(container *container.Container, typ reflect.Type, com
 			if has && hasJSONBody {
 				return fmt.Errorf("multiple json body values per handler not allowed")
 			}
+
 			if has {
 				hasJSONBody = true
 				fn := createJSONBodyLoadFunc(arg, schema)
@@ -305,7 +308,6 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 						}
 						// }
 						return fmt.Errorf("failed loading param '%+v': %w", p, err)
-						continue
 					}
 					if !fValue.IsValid() {
 
@@ -354,7 +356,13 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 			err := fmt.Errorf("expected the first arg to be *http.Request, got %v", in[0].Type())
 			return []reflect.Value{argObj, reflect.ValueOf(err)}
 		}
-		if err := json.NewDecoder(r.Body).Decode(argObj.Interface()); err != nil {
+
+		data, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			return []reflect.Value{argObj, reflect.ValueOf(err)}
+		}
+
+		if err := json.NewDecoder(bytes.NewBuffer(data)).Decode(argObj.Interface()); err != nil {
 			if arg.Kind() != reflect.Ptr {
 				argObj = argObj.Elem()
 			}
@@ -382,7 +390,6 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 				}
 			}
 			return []reflect.Value{argObj, reflect.ValueOf(ErrRequiredJSONBody)}
-
 		}
 		if arg.Kind() != reflect.Ptr {
 			argObj = argObj.Elem()

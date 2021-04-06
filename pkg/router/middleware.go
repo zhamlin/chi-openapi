@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 
 	"github.com/felixge/httpsnoop"
 	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers"
 )
 
 func requestValidationInput(r *http.Request) *openapi3filter.RequestValidationInput {
@@ -39,7 +39,7 @@ func InputFromCTX(ctx context.Context) (*openapi3filter.RequestValidationInput, 
 	return input, nil
 }
 
-func SetOpenAPIInput(router *openapi3filter.Router, options *openapi3filter.Options) func(http.Handler) http.Handler {
+func SetOpenAPIInput(router routers.Router, optionsFn func(r *http.Request, options *openapi3filter.Options)) func(http.Handler) http.Handler {
 	if router == nil {
 		panic("SetOpenAPIInput got a nil router")
 	}
@@ -54,16 +54,17 @@ func SetOpenAPIInput(router *openapi3filter.Router, options *openapi3filter.Opti
 					}
 				}
 			}()
-			route, pathParams, err := router.FindRoute(r.Method, r.URL)
+			route, pathParams, err := router.FindRoute(r)
 			if err != nil {
-				var rError *openapi3filter.RouteError
+				var rError *routers.RouteError
 				if errors.As(err, &rError) {
 					switch rError.Reason {
-					case "Path was not found":
+					case "no matching operation was found":
 						w.WriteHeader(http.StatusNotFound)
-						w.Write([]byte("Not Found\n"))
-					case "Path doesn't support the HTTP method":
+						w.Write([]byte("not found\n"))
+					case "method not allowed":
 						w.WriteHeader(http.StatusMethodNotAllowed)
+						w.Write([]byte("method not allowed\n"))
 					}
 					return
 				}
@@ -71,7 +72,9 @@ func SetOpenAPIInput(router *openapi3filter.Router, options *openapi3filter.Opti
 				return
 			}
 			input := requestValidationInput(r)
-			input.Options = options
+			options := openapi3filter.Options{}
+			optionsFn(r, &options)
+			input.Options = &options
 			input.PathParams = pathParams
 			input.Route = route
 
@@ -94,15 +97,11 @@ func VerifyRequest(errFn ErrorHandler) func(http.Handler) http.Handler {
 				return
 			}
 
-			// The body _could_ be read more than once so go ahead and create a copy
-			newBody := &bytes.Buffer{}
-			input.Request.Body = ioutil.NopCloser(io.TeeReader(r.Body, newBody))
 			err = openapi3filter.ValidateRequest(ctx, input)
 			if err != nil {
 				errFn(w, r, err)
 				return
 			}
-			r.Body = ioutil.NopCloser(newBody)
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -110,11 +109,12 @@ func VerifyRequest(errFn ErrorHandler) func(http.Handler) http.Handler {
 
 // VerifyResponse validates response against matching openapi routes
 // Requires SetOpenAPIInput middleware to have been called
-func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(http.Handler) http.Handler {
+func VerifyResponse(errFn ErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			responseBody := &bytes.Buffer{}
 			statusCode := 0
+
 			wrapped := httpsnoop.Wrap(w, httpsnoop.Hooks{
 				WriteHeader: func(next httpsnoop.WriteHeaderFunc) httpsnoop.WriteHeaderFunc {
 					return func(code int) {
@@ -125,14 +125,14 @@ func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(ht
 				},
 				Write: func(next httpsnoop.WriteFunc) httpsnoop.WriteFunc {
 					return func(p []byte) (int, error) {
-						_, err := responseBody.Write(p)
+						bytesWritten, err := responseBody.Write(p)
 						if err != nil {
 							return -1, err
 						}
 						if statusCode == 0 {
 							statusCode = http.StatusOK
 						}
-						return 0, nil
+						return bytesWritten, nil
 					}
 				},
 			})
@@ -140,44 +140,45 @@ func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(ht
 
 			input, err := InputFromCTX(r.Context())
 			if err != nil {
-				// next.ServeHTTP(w, r)
 				errFn(w, r, err)
 				return
 			}
 
 			responseInput := &openapi3filter.ResponseValidationInput{
-				Header:                 wrapped.Header(),
 				Status:                 statusCode,
-				Options:                options,
+				Header:                 wrapped.Header(),
+				Options:                input.Options,
 				RequestValidationInput: input,
+				Body:                   io.NopCloser(responseBody),
 			}
 			if responseInput.Body == nil {
 				responseInput.Options.ExcludeResponseBody = true
 			}
+			responseInput.Options.IncludeResponseStatus = false
 
 			err = openapi3filter.ValidateResponse(r.Context(), responseInput)
 			if err != nil {
 				responseErr := err.(*openapi3filter.ResponseError)
-				var parseErr *openapi3filter.ParseError
+
 				// ignore any attempt to parse the body on an optional return type
-				if errors.As(responseErr.Err, &parseErr) {
-					if errors.Is(parseErr.RootCause(), io.EOF) {
-						response, has := responseInput.RequestValidationInput.Route.Operation.Responses[fmt.Sprintf("%d", statusCode)]
-						if has {
-							if mt := response.Value.Content.Get("application/json"); mt != nil {
-								if len(mt.Schema.Value.Required) != 0 {
-									errFn(w, r, err)
-									return
-								}
+				var parseErr *openapi3filter.ParseError
+				if errors.As(responseErr.Err, &parseErr) && errors.Is(parseErr.RootCause(), io.EOF) {
+					response, has := responseInput.RequestValidationInput.Route.Operation.Responses[fmt.Sprintf("%d", statusCode)]
+					if has {
+						if mt := response.Value.Content.Get("application/json"); mt != nil {
+							if len(mt.Schema.Value.Required) != 0 {
+								errFn(w, r, err)
+								return
 							}
 						}
-
 					}
 				} else {
 					errFn(w, r, err)
 					return
 				}
 			}
+
+			// copy over data from wrapped ResponseWriter to actual one
 			h := w.Header()
 			for name, value := range wrapped.Header() {
 				for _, v := range value {
@@ -186,8 +187,9 @@ func VerifyResponse(errFn ErrorHandler, options *openapi3filter.Options) func(ht
 					}
 				}
 			}
+
 			w.WriteHeader(statusCode)
-			_, _ = w.Write(responseBody.Bytes())
+			io.Copy(w, responseInput.Body)
 		})
 	}
 }

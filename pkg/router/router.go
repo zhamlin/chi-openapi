@@ -13,7 +13,8 @@ import (
 	"github.com/zhamlin/chi-openapi/pkg/openapi/operations"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers"
+	legacyRouter "github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/go-chi/chi"
 )
 
@@ -30,8 +31,8 @@ func NewRouter() *Router {
 			OpenAPI: "3.0.0",
 			Paths:   openapi3.Paths{},
 			Components: openapi3.Components{
-				Schemas:         openapi.Schemas{},
-				Parameters:      openapi.Parameters{},
+				Schemas:         openapi3.Schemas{},
+				Parameters:      openapi3.ParametersMap{},
 				Responses:       map[string]*openapi3.ResponseRef{},
 				SecuritySchemes: map[string]*openapi3.SecuritySchemeRef{},
 			},
@@ -181,6 +182,9 @@ func (r *Router) MethodFunc(method, path string, handler http.HandlerFunc, optio
 		}
 	}
 
+	if o.Operation.Responses == nil {
+		panic(fmt.Sprintf("router [%s %s]: route does not have any responses defined", method, path))
+	}
 	r.setDefaultResp(&o.Operation)
 
 	r.Mux.MethodFunc(method, path, handler)
@@ -236,10 +240,10 @@ func (r *Router) ValidateSpec() error {
 }
 
 // FilterRouter returns a router used for verifying middlewares
-func (r *Router) FilterRouter() (*openapi3filter.Router, error) {
-	router := openapi3filter.NewRouter()
-	if err := router.AddSwagger(r.Swagger); err != nil {
-		return router, err
+func (r *Router) FilterRouter() (routers.Router, error) {
+	router, err := legacyRouter.NewRouter(r.Swagger)
+	if err != nil {
+		return nil, err
 	}
 	return router, nil
 }
@@ -253,7 +257,7 @@ func (r *Router) UseRouter(other *Router) *Router {
 
 func (r *Router) Components() openapi.Components {
 	return openapi.Components{
-		Schemas:    r.Swagger.Components.Schemas,
+		Schemas:    openapi.Schemas(r.Swagger.Components.Schemas),
 		Parameters: map[reflect.Type]openapi3.Parameters{},
 	}
 }
@@ -261,7 +265,7 @@ func (r *Router) Components() openapi.Components {
 func (r *Router) setStatusDefault(status string, description string, obj interface{}) {
 	resp := openapi3.NewResponse().WithDescription(description)
 	if obj != nil {
-		schema := openapi.SchemaFromObj(obj, r.Swagger.Components.Schemas)
+		schema := openapi.SchemaFromObj(obj, openapi.Schemas(r.Swagger.Components.Schemas))
 		resp = resp.WithContent(openapi3.NewContentWithJSONSchemaRef(schema))
 	}
 
