@@ -375,14 +375,14 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 
 				body := input.Route.Operation.RequestBody
 				if body != nil {
-					return []reflect.Value{argObj, reflect.ValueOf(err)}
+					return []reflect.Value{argObj, reflect.ValueOf(ErrRequiredJSONBody)}
 				}
 
 				if body.Value.Required {
 					return []reflect.Value{argObj, reflect.ValueOf(ErrRequiredJSONBody)}
 				}
 				// because is is not required, return an empty result
-				return []reflect.Value{argObj, {}}
+				return []reflect.Value{argObj, reflect.Zero(errType)}
 			}
 			if errors.Is(err, io.EOF) {
 				if len(schema.Value.Required) == 0 {
