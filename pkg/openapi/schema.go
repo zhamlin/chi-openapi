@@ -87,7 +87,13 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 
 	// custom enumer function, returns an array of its enum types
 	if m, has := typ.MethodByName("EnumValues"); has {
-		types := m.Func.Call([]reflect.Value{reflect.ValueOf(obj)})
+		var value reflect.Value
+		if obj != nil {
+			value = reflect.ValueOf(obj)
+		} else {
+			value = reflect.New(typ).Elem()
+		}
+		types := m.Func.Call([]reflect.Value{value})
 		if len(types) == 1 && types[0].Kind() == reflect.Slice {
 			val := types[0]
 			for i := 0; i < val.Len(); i++ {
