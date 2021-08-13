@@ -45,6 +45,7 @@ func (r *ReflectRouter) SetParent(parent *ReflectRouter) *ReflectRouter {
 	r.handleFns = parent.handleFns
 	r.Swagger.Components = parent.Swagger.Components
 	r.hooks = parent.hooks
+	r.Swagger.Info = parent.Swagger.Info
 	return r
 }
 

@@ -350,7 +350,10 @@ var ErrRequiredJSONBody = fmt.Errorf("expected a request body")
 func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflect.Value {
 	dynamicFuncType := reflect.FuncOf([]reflect.Type{requestPtrType}, []reflect.Type{arg, errType}, false)
 	dynamicFunc := func(in []reflect.Value) []reflect.Value {
-		argObj := reflect.New(arg)
+		// deref the pointer to the new obj
+		argObjPtr := reflect.New(arg)
+		argObj := argObjPtr.Elem()
+
 		r, ok := in[0].Interface().(*http.Request)
 		if !ok {
 			err := fmt.Errorf("expected the first arg to be *http.Request, got %v", in[0].Type())
@@ -362,10 +365,7 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 			return []reflect.Value{argObj, reflect.ValueOf(err)}
 		}
 
-		if err := json.NewDecoder(bytes.NewBuffer(data)).Decode(argObj.Interface()); err != nil {
-			if arg.Kind() != reflect.Ptr {
-				argObj = argObj.Elem()
-			}
+		if err := json.NewDecoder(bytes.NewBuffer(data)).Decode(argObjPtr.Interface()); err != nil {
 			var jsonErr *json.SyntaxError
 			if errors.As(err, &jsonErr) {
 				input, err := router.InputFromCTX(r.Context())
@@ -391,9 +391,7 @@ func createJSONBodyLoadFunc(arg reflect.Type, schema *openapi3.SchemaRef) reflec
 			}
 			return []reflect.Value{argObj, reflect.ValueOf(ErrRequiredJSONBody)}
 		}
-		if arg.Kind() != reflect.Ptr {
-			argObj = argObj.Elem()
-		}
+
 		v, err := openapi.VarToInterface(argObj.Interface())
 		if err != nil {
 			return []reflect.Value{argObj, reflect.ValueOf(err)}

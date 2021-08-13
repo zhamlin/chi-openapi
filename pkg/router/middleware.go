@@ -102,6 +102,10 @@ func VerifyRequest(errFn ErrorHandler) func(http.Handler) http.Handler {
 				errFn(w, r, err)
 				return
 			}
+
+			// ValidateRequest reads from the body and sets it back in these
+			// input struct, so copy it back to the original request
+			r.Body = input.Request.Body
 			next.ServeHTTP(w, r)
 		})
 	}

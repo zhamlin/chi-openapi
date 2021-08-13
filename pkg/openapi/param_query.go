@@ -1,12 +1,14 @@
 package openapi
 
 import (
-	"github.com/zhamlin/chi-openapi/pkg/container"
+	"encoding"
 	"fmt"
 	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/zhamlin/chi-openapi/pkg/container"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -28,6 +30,10 @@ func jsonTagName(tag reflect.StructTag) (string, bool) {
 	return results[0], true
 }
 
+var (
+	textUnmarshaller = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+)
+
 func strToValue(str string, typ reflect.Type, c *container.Container, schema *openapi3.Schema) (reflect.Value, error) {
 	if c != nil && c.HasType(typ) {
 		value, err := c.CreateType(typ, str)
@@ -36,6 +42,15 @@ func strToValue(str string, typ reflect.Type, c *container.Container, schema *op
 		}
 		return reflect.ValueOf(value), nil
 	}
+
+	typPtr := reflect.PtrTo(typ)
+	if typPtr.Implements((textUnmarshaller)) {
+		typPtrObj := reflect.New(typ)
+		unmarhsaller := typPtrObj.Interface().(encoding.TextUnmarshaler)
+		err := unmarhsaller.UnmarshalText([]byte(str))
+		return reflect.ValueOf(typPtrObj.Elem().Interface()), err
+	}
+
 	switch typ.Kind() {
 	case reflect.String:
 		return reflect.ValueOf(str), nil
@@ -75,6 +90,11 @@ func queryValueFn(value string, typ reflect.Type, c *container.Container, schema
 		results := strings.Split(value, delim)
 		obj := reflect.New(typ).Elem()
 		for _, r := range results {
+			if r == "" {
+				continue
+			}
+
+			// TODO: text marhsaller check
 			v, err := queryValueFn(r, typ.Elem(), c, schema)
 			if err != nil {
 				return reflect.Value{}, err

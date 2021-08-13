@@ -17,6 +17,15 @@ type Operation struct {
 type Option func(*openapi3.Swagger, Operation) (Operation, error)
 type Options []Option
 
+type ExtensionData map[string]interface{}
+
+func Extensions(data ExtensionData) Option {
+	return func(_ *openapi3.Swagger, o Operation) (Operation, error) {
+		o.Extensions = data
+		return o, nil
+	}
+}
+
 // NoSecurity sets the security options to an empty array for this operation
 func NoSecurity() Option {
 	return func(_ *openapi3.Swagger, o Operation) (Operation, error) {
