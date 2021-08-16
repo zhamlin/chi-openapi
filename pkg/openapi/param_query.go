@@ -124,10 +124,16 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 		value := q.Get(param.Name)
 		return queryValueFn(value, typ, c, param.Schema.Value)
 	case queryFormat{true, "form"}:
+		objPtr := reflect.New(typ)
+		obj := objPtr.Elem()
+		isTextUnmarshaller := objPtr.Type().Implements((textUnmarshaller))
+
 		// handle structs differently than the rest
 		// all of the structs field are going to be inlined
-		if typ.Kind() == reflect.Struct {
-			obj := reflect.New(typ).Elem()
+		if typ.Kind() == reflect.Struct && !isTextUnmarshaller {
+
+			// check for textUnmarshaller
+
 			for i := 0; i < typ.NumField(); i++ {
 				field := typ.Field(i)
 				jsonTag, ok := jsonTagName(field.Tag)
@@ -179,7 +185,6 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 			return strToValue(values[0], typ, c, param.Schema.Value)
 		}
 
-		obj := reflect.New(typ).Elem()
 		for _, r := range values {
 			v, err := strToValue(r, typ.Elem(), c, param.Schema.Value)
 			if err != nil {
