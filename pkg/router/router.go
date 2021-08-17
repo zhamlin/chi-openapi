@@ -14,15 +14,15 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/routers"
-	legacyRouter "github.com/getkin/kin-openapi/routers/legacy"
-	"github.com/go-chi/chi"
+	gorillaRouter "github.com/getkin/kin-openapi/routers/gorillamux"
+	"github.com/go-chi/chi/v5"
 )
 
 // NewRouter returns a wrapped chi router
 func NewRouter() *Router {
 	return &Router{
 		Mux: chi.NewRouter(),
-		Swagger: &openapi3.Swagger{
+		Swagger: &openapi3.T{
 			Info: &openapi3.Info{
 				Version: "0.0.1",
 				Title:   "Title",
@@ -82,7 +82,7 @@ func (r *Router) SetGlobalSecurity(name string) *Router {
 // Router is a small wrapper over a chi.Router to help generate an openapi spec
 type Router struct {
 	Mux     chi.Router
-	Swagger *openapi3.Swagger
+	Swagger *openapi3.T
 
 	prefixPath       string
 	defaultResponses map[string]*openapi3.ResponseRef
@@ -241,7 +241,7 @@ func (r *Router) ValidateSpec() error {
 
 // FilterRouter returns a router used for verifying middlewares
 func (r *Router) FilterRouter() (routers.Router, error) {
-	router, err := legacyRouter.NewRouter(r.Swagger)
+	router, err := gorillaRouter.NewRouter(r.Swagger)
 	if err != nil {
 		return nil, err
 	}

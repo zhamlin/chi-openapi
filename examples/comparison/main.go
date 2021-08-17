@@ -10,7 +10,7 @@ import (
 	"github.com/zhamlin/chi-openapi/pkg/router"
 	"github.com/zhamlin/chi-openapi/pkg/router/reflection"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 )
 
 type basicPostRequestBody struct {
