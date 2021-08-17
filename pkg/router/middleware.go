@@ -56,18 +56,6 @@ func SetOpenAPIInput(router routers.Router, optionsFn func(r *http.Request, opti
 			}()
 			route, pathParams, err := router.FindRoute(r)
 			if err != nil {
-				var rError *routers.RouteError
-				if errors.As(err, &rError) {
-					switch rError.Reason {
-					case "no matching operation was found":
-						w.WriteHeader(http.StatusNotFound)
-						w.Write([]byte("not found\n"))
-					case "method not allowed":
-						w.WriteHeader(http.StatusMethodNotAllowed)
-						w.Write([]byte("method not allowed\n"))
-					}
-					return
-				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -103,7 +91,7 @@ func VerifyRequest(errFn ErrorHandler) func(http.Handler) http.Handler {
 				return
 			}
 
-			// ValidateRequest reads from the body and sets it back in these
+			// ValidateRequest reads from the body and sets it back in the
 			// input struct, so copy it back to the original request
 			r.Body = input.Request.Body
 			next.ServeHTTP(w, r)
