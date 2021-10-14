@@ -34,6 +34,17 @@ var (
 	textUnmarshaller = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
 )
 
+func valueFromString(str string, typ reflect.Type) (reflect.Value, error) {
+	typPtr := reflect.PtrTo(typ)
+	if typPtr.Implements((textUnmarshaller)) {
+		typPtrObj := reflect.New(typ)
+		unmarhsaller := typPtrObj.Interface().(encoding.TextUnmarshaler)
+		err := unmarhsaller.UnmarshalText([]byte(str))
+		return reflect.ValueOf(typPtrObj.Elem().Interface()), err
+	}
+	return reflect.Value{}, nil
+}
+
 func strToValue(str string, typ reflect.Type, c *container.Container, schema *openapi3.Schema) (reflect.Value, error) {
 	if c != nil && c.HasType(typ) {
 		value, err := c.CreateType(typ, str)
@@ -43,12 +54,12 @@ func strToValue(str string, typ reflect.Type, c *container.Container, schema *op
 		return reflect.ValueOf(value), nil
 	}
 
-	typPtr := reflect.PtrTo(typ)
-	if typPtr.Implements((textUnmarshaller)) {
-		typPtrObj := reflect.New(typ)
-		unmarhsaller := typPtrObj.Interface().(encoding.TextUnmarshaler)
-		err := unmarhsaller.UnmarshalText([]byte(str))
-		return reflect.ValueOf(typPtrObj.Elem().Interface()), err
+	strValue, err := valueFromString(str, typ)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	if strValue.IsValid() {
+		return strValue, nil
 	}
 
 	switch typ.Kind() {
@@ -220,6 +231,15 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 				defaultTag, ok := field.Tag.Lookup("default")
 				if ok {
 					value := reflect.Value{}
+					strValue, err := valueFromString(defaultTag, field.Type)
+					if err != nil {
+						return reflect.Value{}, err
+					}
+					if strValue.IsValid() {
+						obj.Field(i).Set(strValue)
+						continue
+					}
+
 					switch field.Type.Kind() {
 					case reflect.Int:
 						n, err := strconv.Atoi(defaultTag)
