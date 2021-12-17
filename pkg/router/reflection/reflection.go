@@ -26,29 +26,7 @@ var (
 	errType        = reflect.TypeOf((*error)(nil)).Elem()
 )
 
-type RequestHandler interface {
-	Error(w http.ResponseWriter, r *http.Request, err error)
-	Success(w http.ResponseWriter, r *http.Request, obj interface{})
-}
-
-type ErrorHandler func(http.ResponseWriter, *http.Request, error)
-
-type RequestHandleFns struct {
-	ErrFn     ErrorHandler
-	SuccessFn func(w http.ResponseWriter, r *http.Request, response interface{})
-}
-
-func (h RequestHandleFns) Error(w http.ResponseWriter, r *http.Request, err error) {
-	if h.ErrFn != nil {
-		h.ErrFn(w, r, err)
-	}
-}
-
-func (h RequestHandleFns) Success(w http.ResponseWriter, r *http.Request, obj interface{}) {
-	if h.SuccessFn != nil {
-		h.SuccessFn(w, r, obj)
-	}
-}
+type RequestHandler func(w http.ResponseWriter, r *http.Request, response interface{}, err error)
 
 // HandlerFromFn takes in any function matching the following criteria:
 // 1. Takes the following as input:
@@ -62,18 +40,20 @@ func (h RequestHandleFns) Success(w http.ResponseWriter, r *http.Request, obj in
 // any errors during the http.Handler
 // All arguments will be automatically created and supplied to the function.
 // Only loads params and one json body schema in the components.
-func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Components, c *container.Container) (http.HandlerFunc, error) {
-	if fptr == nil {
+func HandlerFromFn(fptr interface{}, fn RequestHandler, components openapi.Components, c *container.Container) (http.HandlerFunc, error) {
+	switch handler := fptr.(type) {
+	case nil:
 		return nil, fmt.Errorf("received a nil value for the fnPtr to HandlerFromFn")
-	}
-	if handler, ok := fptr.(http.HandlerFunc); ok {
+		// TODO: remove
+	case http.HandlerFunc:
 		return handler, nil
-	}
-	if handler, ok := fptr.(http.Handler); ok {
+	case http.Handler:
 		return handler.ServeHTTP, nil
 	}
-
 	typ := reflect.TypeOf(fptr)
+	if k := typ.Kind(); k != reflect.Func {
+		return nil, fmt.Errorf("expected a function to HandlerFromFn, got: %+v", k)
+	}
 
 	// make sure func has the right amount of return values
 	returnCount := typ.NumOut()
@@ -86,42 +66,30 @@ func HandlerFromFn(fptr interface{}, fns RequestHandler, components openapi.Comp
 			return nil, fmt.Errorf("expected the last return type to be an error, got: %+v", lastError)
 		}
 	}
-
-	if k := typ.Kind(); k != reflect.Func {
-		return nil, fmt.Errorf("expected a function to HandlerFromFn, got: %+v", k)
-	}
-
 	if err := loadArgsIntoContainer(c, typ, components); err != nil {
 		return nil, err
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		result, err := c.Execute(fptr, w, r, r.Context())
-		if err != nil {
-			fns.Error(w, r, err)
-			return
-		}
-
-		// always try to call the success function
-		// its up to the success function to handle a nil result
-		fns.Success(w, r, result)
+		fn(w, r, result, err)
 	}, nil
 }
 
-func HandlerFromFnDefault(fnPtr interface{}, fns RequestHandleFns, components openapi.Components) (http.HandlerFunc, error) {
-	return HandlerFromFn(fnPtr, fns, components, container.NewContainer())
+func HandlerFromFnDefault(fnPtr interface{}, fn RequestHandler, components openapi.Components) (http.HandlerFunc, error) {
+	return HandlerFromFn(fnPtr, fn, components, container.NewContainer())
 }
 
 // loadArgsIntoContainer checks that it knows how to create what the handler function expects
 // returns a list of the arguments with the location
 func loadArgsIntoContainer(container *container.Container, typ reflect.Type, components openapi.Components) error {
-	// dummy providers, these will be overridden when the container
-	// is Executed
 	var err error
 	e := func(e error) {
 		if e != nil && err == nil {
 			err = e
 		}
 	}
+	// dummy providers, these will be overridden when the container
+	// is executed
 	e(container.Provide(func() (http.ResponseWriter, error) {
 		return nil, fmt.Errorf("http.ResponseWriter not provided")
 	}))

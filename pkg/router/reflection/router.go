@@ -24,9 +24,9 @@ type Hooks struct {
 
 type ReflectRouter struct {
 	*router.Router
-	handleFns RequestHandleFns
-	c         *container.Container
-	hooks     Hooks
+	handleFn RequestHandler
+	c        *container.Container
+	hooks    Hooks
 }
 
 // NewRouter returns a wrapped chi router
@@ -42,7 +42,7 @@ func (r *ReflectRouter) SetParent(parent *ReflectRouter) *ReflectRouter {
 		return r
 	}
 	r.c = parent.c
-	r.handleFns = parent.handleFns
+	r.handleFn = parent.handleFn
 	r.Swagger.Components = parent.Swagger.Components
 	r.hooks = parent.hooks
 	r.Swagger.Info = parent.Swagger.Info
@@ -59,8 +59,8 @@ func (r *ReflectRouter) WithContainer(c *container.Container) *ReflectRouter {
 	return r
 }
 
-func (r *ReflectRouter) WithHandlers(handleFns RequestHandleFns) *ReflectRouter {
-	r.handleFns = handleFns
+func (r *ReflectRouter) WithHandler(fn RequestHandler) *ReflectRouter {
+	r.handleFn = fn
 	return r
 }
 
@@ -82,7 +82,7 @@ func (r *ReflectRouter) UseRouter(other *ReflectRouter) *ReflectRouter {
 
 // Route mounts a sub-Router along a `pattern`` string.
 func (r *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
-	subRouter := NewRouter().SetParent(r).WithHandlers(r.handleFns)
+	subRouter := NewRouter().SetParent(r).WithHandler(r.handleFn)
 	if fn != nil {
 		fn(subRouter)
 	}
@@ -122,7 +122,7 @@ func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, opt
 		}
 	}
 
-	fn, err := HandlerFromFn(handler, r.handleFns, r.Components(), r.c)
+	fn, err := HandlerFromFn(handler, r.handleFn, r.Components(), r.c)
 	if err != nil {
 		p(err)
 	}
