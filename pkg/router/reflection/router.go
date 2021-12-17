@@ -14,12 +14,12 @@ type Middleware func(next http.Handler) http.Handler
 
 type Hooks struct {
 	// BeforeOptions is called before the options are passed into the operation.
-	// The returned operations will be used in place of the original
-	BeforeOptions func(method, path string, handler interface{}, options []operations.Option) (operations.Options, error)
+	// The returned operation will be used in place of the original
+	BeforeOptions func(method, pattern string, handler interface{}, options []operations.Option) (operations.Options, error)
 
 	// BeforeMiddleware is called before the handler is wrapped with the middleware.
-	// The returned middlewares will be used in place of the original
-	BeforeMiddleware func(method, path string, handler interface{}, c *ReflectRouter, middleware []Middleware) ([]Middleware, error)
+	// The returned middleware will be used in place of the original
+	BeforeMiddleware func(method, pattern string, handler interface{}, c *ReflectRouter, middleware []Middleware) ([]Middleware, error)
 }
 
 type ReflectRouter struct {
@@ -90,23 +90,23 @@ func (r *ReflectRouter) Route(pattern string, fn func(*ReflectRouter)) {
 }
 
 // Mount attaches another http.Handler along ./pattern/*
-func (r *ReflectRouter) Mount(path string, handler http.Handler) {
+func (r *ReflectRouter) Mount(pattern string, handler http.Handler) {
 	switch obj := handler.(type) {
 	case *ReflectRouter:
-		r.Router.Mount(path, obj.Router)
+		r.Router.Mount(pattern, obj.Router)
 	default:
-		r.Router.Mount(path, handler)
+		r.Router.Mount(pattern, handler)
 	}
 }
 
 // MethodFunc adds routes for `pattern` that matches the `method` HTTP method.
 // Middleware are executed from first to last
-func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+func (r *ReflectRouter) MethodFunc(method, pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
 	p := func(err error) {
-		panic(fmt.Sprintf("router [%s %s]: cannot create automatic handler: %v", method, path, err))
+		panic(fmt.Sprintf("router [%s %s]: cannot create automatic handler: %v", method, pattern, err))
 	}
 	if h := r.hooks.BeforeOptions; h != nil {
-		opts, err := h(method, path, handler, options)
+		opts, err := h(method, pattern, handler, options)
 		if err != nil {
 			p(err)
 		}
@@ -128,7 +128,7 @@ func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, opt
 	}
 
 	if h := r.hooks.BeforeMiddleware; h != nil {
-		middle, err := h(method, path, handler, r, middleware)
+		middle, err := h(method, pattern, handler, r, middleware)
 		if err != nil {
 			p(err)
 		}
@@ -146,7 +146,7 @@ func (r *ReflectRouter) MethodFunc(method, path string, handler interface{}, opt
 		fn = middlewareFn(fn).ServeHTTP
 	}
 
-	r.Router.MethodFunc(method, path, fn, options)
+	r.Router.MethodFunc(method, pattern, fn, options)
 }
 
 // FIXME: remove this?
@@ -154,38 +154,38 @@ func (r *ReflectRouter) Container() *container.Container {
 	return r.c
 }
 
-func (r *ReflectRouter) Get(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodGet, path, handler, options, middleware...)
+func (r *ReflectRouter) Get(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodGet, pattern, handler, options, middleware...)
 }
 
-func (r *ReflectRouter) Options(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodOptions, path, handler, options, middleware...)
+func (r *ReflectRouter) Options(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodOptions, pattern, handler, options, middleware...)
 }
 
-func (r *ReflectRouter) Connect(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodConnect, path, handler, options, middleware...)
+func (r *ReflectRouter) Connect(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodConnect, pattern, handler, options, middleware...)
 }
 
-func (r *ReflectRouter) Trace(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodTrace, path, handler, options, middleware...)
+func (r *ReflectRouter) Trace(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodTrace, pattern, handler, options, middleware...)
 }
 
-func (r *ReflectRouter) Post(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodPost, path, handler, options, middleware...)
+func (r *ReflectRouter) Post(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodPost, pattern, handler, options, middleware...)
 }
 
-func (r *ReflectRouter) Put(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodPut, path, handler, options, middleware...)
+func (r *ReflectRouter) Put(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodPut, pattern, handler, options, middleware...)
 }
 
-func (r *ReflectRouter) Patch(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodPatch, path, handler, options, middleware...)
+func (r *ReflectRouter) Patch(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodPatch, pattern, handler, options, middleware...)
 }
 
-func (r *ReflectRouter) Delete(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodDelete, path, handler, options, middleware...)
+func (r *ReflectRouter) Delete(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodDelete, pattern, handler, options, middleware...)
 }
 
-func (r *ReflectRouter) Head(path string, handler interface{}, options []operations.Option, middleware ...Middleware) {
-	r.MethodFunc(http.MethodHead, path, handler, options, middleware...)
+func (r *ReflectRouter) Head(pattern string, handler interface{}, options []operations.Option, middleware ...Middleware) {
+	r.MethodFunc(http.MethodHead, pattern, handler, options, middleware...)
 }

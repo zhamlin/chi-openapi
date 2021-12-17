@@ -108,7 +108,7 @@ func (r *Router) With(middlewares ...func(http.Handler) http.Handler) *Router {
 // func (r *Router) Group(path, name, description string) {
 // }
 
-// Route mounts a sub-Router along a `pattern`` string.
+// Route mounts a sub-Router along a `pattern` string.
 func (r *Router) Route(pattern string, fn func(*Router)) {
 	subRouter := NewRouter()
 	if fn != nil {
@@ -132,7 +132,7 @@ func (r *Router) setDefaultResp(o *openapi3.Operation) {
 }
 
 // Mount attaches another http.Handler along ./pattern/*
-func (r *Router) Mount(route string, handler http.Handler) {
+func (r *Router) Mount(pattern string, handler http.Handler) {
 	switch obj := handler.(type) {
 	case *Router:
 		for name, item := range obj.Swagger.Paths {
@@ -140,7 +140,7 @@ func (r *Router) Mount(route string, handler http.Handler) {
 				r.setDefaultResp(op)
 			}
 
-			r.Swagger.Paths[path.Join(route, name)] = item
+			r.Swagger.Paths[path.Join(pattern, name)] = item
 		}
 		for name, item := range obj.Swagger.Components.Schemas {
 			if _, has := r.Swagger.Components.Schemas[name]; !has {
@@ -153,7 +153,7 @@ func (r *Router) Mount(route string, handler http.Handler) {
 			}
 		}
 	}
-	r.Mux.Mount(route, handler)
+	r.Mux.Mount(pattern, handler)
 }
 
 func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -161,8 +161,8 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Method adds routes for `pattern` that matches the `method` HTTP method.
-func (r *Router) Method(method, path string, handler http.Handler, options []operations.Option) {
-	r.MethodFunc(method, path, handler.ServeHTTP, options)
+func (r *Router) Method(method, pattern string, handler http.Handler, options []operations.Option) {
+	r.MethodFunc(method, pattern, handler.ServeHTTP, options)
 }
 
 func getFunctionName(i interface{}) string {
@@ -170,61 +170,61 @@ func getFunctionName(i interface{}) string {
 }
 
 // MethodFunc adds routes for `pattern` that matches the `method` HTTP method.
-func (r *Router) MethodFunc(method, path string, handler http.HandlerFunc, options []operations.Option) {
-	path = r.prefixPath + path
+func (r *Router) MethodFunc(method, pattern string, handler http.HandlerFunc, options []operations.Option) {
+	pattern = r.prefixPath + pattern
 
 	o := operations.Operation{}
 	var err error
 	for _, option := range options {
 		o, err = option(r.Swagger, o)
 		if err != nil {
-			panic(fmt.Sprintf("router [%s %s]: cannot create handler: %v", method, path, err))
+			panic(fmt.Sprintf("router [%s %s]: cannot create handler: %v", method, pattern, err))
 		}
 	}
 
 	if o.Operation.Responses == nil {
-		panic(fmt.Sprintf("router [%s %s]: route does not have any responses defined", method, path))
+		panic(fmt.Sprintf("router [%s %s]: route does not have any responses defined", method, pattern))
 	}
 	r.setDefaultResp(&o.Operation)
 
-	r.Mux.MethodFunc(method, path, handler)
-	r.Swagger.AddOperation(path, method, &o.Operation)
+	r.Mux.MethodFunc(method, pattern, handler)
+	r.Swagger.AddOperation(pattern, method, &o.Operation)
 }
 
-func (r *Router) Get(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodGet, path, handler, options)
+func (r *Router) Get(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodGet, pattern, handler, options)
 }
 
-func (r *Router) Options(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodOptions, path, handler, options)
+func (r *Router) Options(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodOptions, pattern, handler, options)
 }
 
-func (r *Router) Connect(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodConnect, path, handler, options)
+func (r *Router) Connect(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodConnect, pattern, handler, options)
 }
 
-func (r *Router) Trace(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodTrace, path, handler, options)
+func (r *Router) Trace(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodTrace, pattern, handler, options)
 }
 
-func (r *Router) Post(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodPost, path, handler, options)
+func (r *Router) Post(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodPost, pattern, handler, options)
 }
 
-func (r *Router) Put(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodPut, path, handler, options)
+func (r *Router) Put(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodPut, pattern, handler, options)
 }
 
-func (r *Router) Patch(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodPatch, path, handler, options)
+func (r *Router) Patch(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodPatch, pattern, handler, options)
 }
 
-func (r *Router) Delete(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodDelete, path, handler, options)
+func (r *Router) Delete(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodDelete, pattern, handler, options)
 }
 
-func (r *Router) Head(path string, handler http.HandlerFunc, options []operations.Option) {
-	r.MethodFunc(http.MethodHead, path, handler, options)
+func (r *Router) Head(pattern string, handler http.HandlerFunc, options []operations.Option) {
+	r.MethodFunc(http.MethodHead, pattern, handler, options)
 }
 
 func (r *Router) GenerateSpec() (string, error) {
