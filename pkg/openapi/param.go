@@ -95,7 +95,7 @@ var paramFuncTags = map[string]paramTagFunc{
 
 var errNoLocation = fmt.Errorf("no parameter location")
 
-func paramFromStructField(field reflect.StructField, schemas Schemas) (*openapi3.ParameterRef, error) {
+func paramFromStructField(field reflect.StructField, schemas Schemas, typs RegisteredTypes) (*openapi3.ParameterRef, error) {
 	param := GetParameterType(field.Tag)
 	if param.In == "" {
 		return nil, fmt.Errorf("field '%v': %w", field.Name, errNoLocation)
@@ -109,7 +109,7 @@ func paramFromStructField(field reflect.StructField, schemas Schemas) (*openapi3
 		}
 	}
 
-	param.Schema = schemaFromType(field.Type, nil, schemas)
+	param.Schema = schemaFromType(field.Type, nil, schemas, typs)
 
 	// load schema tags
 	for name, fn := range schemaFuncTags {
@@ -133,7 +133,7 @@ func paramFromStructField(field reflect.StructField, schemas Schemas) (*openapi3
 
 var ErrNotStruct = fmt.Errorf("expected a struct")
 
-func ParamsFromType(typ reflect.Type, schemas Schemas) (openapi3.Parameters, error) {
+func ParamsFromType(typ reflect.Type, schemas Schemas, typs RegisteredTypes) (openapi3.Parameters, error) {
 	// TODO: Handle pointer?
 	if typ.Kind() != reflect.Struct {
 		return openapi3.Parameters{}, fmt.Errorf("got %v: %w", typ.Kind(), ErrNotStruct)
@@ -144,7 +144,7 @@ func ParamsFromType(typ reflect.Type, schemas Schemas) (openapi3.Parameters, err
 		field := typ.Field(i)
 		var paramRef *openapi3.ParameterRef
 		var err error
-		paramRef, err = paramFromStructField(field, schemas)
+		paramRef, err = paramFromStructField(field, schemas, typs)
 		if err != nil {
 			// ignore this field
 			if errors.Is(err, errNoLocation) {
@@ -157,9 +157,9 @@ func ParamsFromType(typ reflect.Type, schemas Schemas) (openapi3.Parameters, err
 	return objParams, nil
 }
 
-func ParamsFromObj(obj interface{}, schemas Schemas) (openapi3.Parameters, error) {
+func ParamsFromObj(obj interface{}, schemas Schemas, typs RegisteredTypes) (openapi3.Parameters, error) {
 	typ := reflect.TypeOf(obj)
-	return ParamsFromType(typ, schemas)
+	return ParamsFromType(typ, schemas, typs)
 }
 
 // interfaceSlice converts a slice to an slices of interfaces.

@@ -5,18 +5,24 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
 type Schemas map[string]*openapi3.SchemaRef
+type RegisteredTypes map[reflect.Type]TypeOption
+
+type TypeOption struct {
+	SchemaRef *openapi3.SchemaRef
+	// optional schema, if set ignore schema name and inline this type
+	Schema *openapi3.Schema
+}
 
 // SchemaFromObj returns an openapi3 schema for the object.
 // For paramters, use ParamsFromObj.
-func SchemaFromObj(obj interface{}, schemas Schemas) *openapi3.SchemaRef {
+func SchemaFromObj(obj interface{}, schemas Schemas, typs RegisteredTypes) *openapi3.SchemaRef {
 	typ := reflect.TypeOf(obj)
-	return schemaFromType(typ, obj, schemas)
+	return schemaFromType(typ, obj, schemas, typs)
 }
 
 // SchemaID is used to override the name of the schema type
@@ -30,7 +36,7 @@ type SchemaInline interface {
 	SchemaInline() bool
 }
 
-const componentSchemasPath = "#/components/schemas/"
+const ComponentSchemasPath = "#/components/schemas/"
 
 func GetTypeName(typ reflect.Type) string {
 	if typ.Kind() == reflect.Ptr {
@@ -47,14 +53,6 @@ func GetTypeName(typ reflect.Type) string {
 	return name
 }
 
-func timeSchema() *openapi3.Schema {
-	schema := openapi3.NewSchema()
-	schema.Type = "string"
-	// https://tools.ietf.org/html/rfc3339#section-5.6
-	schema.Format = "date-time"
-	return schema
-}
-
 type OpenAPIDescriptor interface {
 	OpenAPIDescription() string
 }
@@ -62,21 +60,32 @@ type OpenAPIDescriptor interface {
 var (
 	stringerType          = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
 	openAPIDescriptorType = reflect.TypeOf((*OpenAPIDescriptor)(nil)).Elem()
-	timeType              = reflect.TypeOf(time.Time{})
 	schemaInlineType      = reflect.TypeOf((*SchemaInline)(nil)).Elem()
 )
 
-func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi3.SchemaRef {
-	schema := openapi3.NewSchema()
-	name := GetTypeName(typ)
-
-	if schemas != nil {
-		// if we've already loaded this type, return a reference
-		if obj, has := schemas[name]; has {
-			return openapi3.NewSchemaRef(componentSchemasPath+name, obj.Value)
+func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas, typs RegisteredTypes) *openapi3.SchemaRef {
+	if typs != nil {
+		// handle registered types
+		if info, has := typs[typ]; has {
+			if info.SchemaRef != nil {
+				return info.SchemaRef
+			} else if info.Schema != nil {
+				return openapi3.NewSchemaRef("", info.Schema)
+			} else {
+				panic("expected schema or schema ref, got neither")
+			}
 		}
 	}
 
+	name := GetTypeName(typ)
+	if schemas != nil {
+		// if we've already loaded this type, return a reference
+		if obj, has := schemas[name]; has {
+			return openapi3.NewSchemaRef(ComponentSchemasPath+name, obj.Value)
+		}
+	}
+
+	schema := openapi3.NewSchema()
 	if typ.Implements(openAPIDescriptorType) {
 		descriptor := reflect.ValueOf(obj).Interface().(OpenAPIDescriptor)
 		description := descriptor.OpenAPIDescription()
@@ -109,21 +118,16 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 
 		if schemas != nil {
 			schemas[name] = openapi3.NewSchemaRef("", schema)
-			return openapi3.NewSchemaRef(componentSchemasPath+name, schemas[name].Value)
+			return openapi3.NewSchemaRef(ComponentSchemasPath+name, schemas[name].Value)
 		}
 		return openapi3.NewSchemaRef("", schema)
-	}
-
-	switch typ {
-	case timeType:
-		return openapi3.NewSchemaRef("", timeSchema())
 	}
 
 	switch typ.Kind() {
 	case reflect.Interface:
 		if obj != nil {
 			v := reflect.TypeOf(obj)
-			return schemaFromType(v, obj, schemas)
+			return schemaFromType(v, obj, schemas, typs)
 		}
 		schema.Type = "object"
 	case reflect.String:
@@ -147,15 +151,15 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 	case reflect.Ptr:
 		if obj != nil {
 			newObj := reflect.New(typ.Elem()).Elem().Interface()
-			return schemaFromType(typ.Elem(), newObj, schemas)
+			return schemaFromType(typ.Elem(), newObj, schemas, typs)
 		}
 	case reflect.Slice, reflect.Array:
 		schema.Type = "array"
 		if obj != nil {
 			newObj := reflect.New(typ.Elem()).Elem().Interface()
-			schema.Items = schemaFromType(typ.Elem(), newObj, schemas)
+			schema.Items = schemaFromType(typ.Elem(), newObj, schemas, typs)
 		} else {
-			schema.Items = schemaFromType(typ.Elem(), nil, schemas)
+			schema.Items = schemaFromType(typ.Elem(), nil, schemas, typs)
 		}
 	case reflect.Map:
 		// only support maps with string keys
@@ -164,7 +168,7 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 
 			if obj != nil {
 				newObj := reflect.New(typ.Elem()).Elem().Interface()
-				schema.AdditionalProperties = schemaFromType(typ.Elem(), newObj, schemas)
+				schema.AdditionalProperties = schemaFromType(typ.Elem(), newObj, schemas, typs)
 			}
 		}
 
@@ -177,19 +181,18 @@ func schemaFromType(typ reflect.Type, obj interface{}, schemas Schemas) *openapi
 			b := objPtr.Elem().Interface().(SchemaInline)
 			inline = b.SchemaInline()
 		}
-		newSchema := getSchemaFromStruct(schemas, typ, obj)
+		newSchema := getSchemaFromStruct(schemas, typs, typ, obj)
 		newSchema.Description = schema.Description
 		schema = newSchema
 		if schemas != nil && !inline {
 			schemas[name] = openapi3.NewSchemaRef("", schema)
-			return openapi3.NewSchemaRef(componentSchemasPath+name, schemas[name].Value)
+			return openapi3.NewSchemaRef(ComponentSchemasPath+name, schemas[name].Value)
 		}
-	default:
 	}
 	return openapi3.NewSchemaRef("", schema)
 }
 
-func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *openapi3.Schema {
+func getSchemaFromStruct(schemas Schemas, typs RegisteredTypes, t reflect.Type, obj interface{}) *openapi3.Schema {
 	schema := &openapi3.Schema{
 		Type: "object",
 	}
@@ -229,7 +232,7 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 			if objValue.IsValid() {
 				newObj = objValue.Field(i)
 			}
-			s = schemaFromType(field.Type, newObj, schemas)
+			s = schemaFromType(field.Type, newObj, schemas, typs)
 		default:
 			if objValue.IsValid() {
 				newObj := obj
@@ -237,9 +240,9 @@ func getSchemaFromStruct(schemas Schemas, t reflect.Type, obj interface{}) *open
 				if fieldObj.IsValid() {
 					newObj = fieldObj.Interface()
 				}
-				s = schemaFromType(field.Type, newObj, schemas)
+				s = schemaFromType(field.Type, newObj, schemas, typs)
 			} else {
-				s = schemaFromType(field.Type, obj, schemas)
+				s = schemaFromType(field.Type, obj, schemas, typs)
 			}
 		}
 		for name, fn := range schemaFuncTags {

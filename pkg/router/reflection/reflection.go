@@ -167,7 +167,7 @@ func createLoadStructFunc(arg reflect.Type, components openapi.Components, conta
 	params, has := components.Parameters[arg]
 	if !has {
 		var err error
-		params, err = openapi.ParamsFromType(arg, components.Schemas)
+		params, err = openapi.ParamsFromType(arg, components.Schemas, components.RegisteredTypes)
 		if err != nil {
 			return reflect.Value{}, err
 		}

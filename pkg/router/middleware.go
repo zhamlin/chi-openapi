@@ -51,7 +51,9 @@ func SetOpenAPIInput(router routers.Router, optionsFn func(r *http.Request, opti
 			}
 			input := requestValidationInput(r)
 			options := openapi3filter.Options{}
-			optionsFn(r, &options)
+			if optionsFn != nil {
+				optionsFn(r, &options)
+			}
 			input.Options = &options
 			input.PathParams = pathParams
 			input.Route = route

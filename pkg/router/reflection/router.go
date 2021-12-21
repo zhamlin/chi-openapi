@@ -43,9 +43,9 @@ func (r *ReflectRouter) SetParent(parent *ReflectRouter) *ReflectRouter {
 	}
 	r.c = parent.c
 	r.handleFn = parent.handleFn
-	r.Swagger.Components = parent.Swagger.Components
+	r.OpenAPI.Components = parent.OpenAPI.Components
 	r.hooks = parent.hooks
-	r.Swagger.Info = parent.Swagger.Info
+	r.OpenAPI.Info = parent.OpenAPI.Info
 	return r
 }
 
@@ -75,7 +75,7 @@ func (r *ReflectRouter) Provide(fptr interface{}) error {
 
 // UseRouter copies over the routes and swagger info from the other router.
 func (r *ReflectRouter) UseRouter(other *ReflectRouter) *ReflectRouter {
-	r.Swagger.Info = other.Swagger.Info
+	r.OpenAPI.Info = other.OpenAPI.Info
 	r.Mount("/", other)
 	return r
 }
@@ -116,7 +116,7 @@ func (r *ReflectRouter) MethodFunc(method, pattern string, handler interface{}, 
 	o := operations.Operation{}
 	for _, option := range options {
 		// don't modify the operation here, just check for errors and update schemas
-		_, err := option(r.Swagger, o)
+		_, err := option(&r.OpenAPI, o)
 		if err != nil {
 			p(err)
 		}

@@ -22,29 +22,31 @@ import (
 func NewRouter() *Router {
 	return &Router{
 		Mux: chi.NewRouter(),
-		Swagger: &openapi3.T{
-			Info: &openapi3.Info{
-				Version: "0.0.1",
-				Title:   "Title",
-			},
-			Servers: openapi3.Servers{},
-			OpenAPI: "3.0.0",
-			Paths:   openapi3.Paths{},
-			Components: openapi3.Components{
-				Schemas:         openapi3.Schemas{},
-				Parameters:      openapi3.ParametersMap{},
-				Responses:       map[string]*openapi3.ResponseRef{},
-				SecuritySchemes: map[string]*openapi3.SecuritySchemeRef{},
+		OpenAPI: openapi.OpenAPI{
+			RegisteredTypes: openapi.RegisteredTypes{},
+			T: &openapi3.T{
+				Info: &openapi3.Info{
+					Version: "0.0.1",
+					Title:   "Title",
+				},
+				Servers: openapi3.Servers{},
+				OpenAPI: "3.0.0",
+				Paths:   openapi3.Paths{},
+				Components: openapi3.Components{
+					Schemas:         openapi3.Schemas{},
+					Parameters:      openapi3.ParametersMap{},
+					Responses:       map[string]*openapi3.ResponseRef{},
+					SecuritySchemes: map[string]*openapi3.SecuritySchemeRef{},
+				},
 			},
 		},
 		defaultResponses: map[string]*openapi3.ResponseRef{},
-		registeredTypes:  map[reflect.Type]*openapi3.SchemaRef{},
 	}
 }
 
 func (r *Router) WithInfo(info openapi.Info) *Router {
 	apiInfo := openapi3.Info(info)
-	r.Swagger.Info = &apiInfo
+	r.OpenAPI.Info = &apiInfo
 	return r
 }
 
@@ -68,12 +70,12 @@ func (r *Router) WithSecurity(security SecuritySchema) *Router {
 	if security.Scheme != "" {
 		schema = schema.WithScheme(security.Scheme)
 	}
-	r.Swagger.Components.SecuritySchemes[security.Name] = &openapi3.SecuritySchemeRef{Value: schema}
+	r.OpenAPI.Components.SecuritySchemes[security.Name] = &openapi3.SecuritySchemeRef{Value: schema}
 	return r
 }
 
 func (r *Router) SetGlobalSecurity(name string) *Router {
-	r.Swagger.Security.With(openapi3.
+	r.OpenAPI.Security.With(openapi3.
 		NewSecurityRequirement().
 		Authenticate(name))
 	return r
@@ -82,11 +84,10 @@ func (r *Router) SetGlobalSecurity(name string) *Router {
 // Router is a small wrapper over a chi.Router to help generate an openapi spec
 type Router struct {
 	Mux     chi.Router
-	Swagger *openapi3.T
+	OpenAPI openapi.OpenAPI
 
 	prefixPath       string
 	defaultResponses map[string]*openapi3.ResponseRef
-	registeredTypes  map[reflect.Type]*openapi3.SchemaRef
 }
 
 // Use appends one or more middlewares onto the Router stack.
@@ -97,7 +98,7 @@ func (r *Router) Use(middlewares ...func(http.Handler) http.Handler) {
 // With adds inline middlewares for an endpoint handler.
 func (r *Router) With(middlewares ...func(http.Handler) http.Handler) *Router {
 	newRouter := NewRouter()
-	newRouter.Swagger = r.Swagger
+	newRouter.OpenAPI = r.OpenAPI
 	newRouter.Mux = r.Mux.With(middlewares...)
 	return newRouter
 }
@@ -135,21 +136,21 @@ func (r *Router) setDefaultResp(o *openapi3.Operation) {
 func (r *Router) Mount(pattern string, handler http.Handler) {
 	switch obj := handler.(type) {
 	case *Router:
-		for name, item := range obj.Swagger.Paths {
+		for name, item := range obj.OpenAPI.Paths {
 			for _, op := range item.Operations() {
 				r.setDefaultResp(op)
 			}
 
-			r.Swagger.Paths[path.Join(pattern, name)] = item
+			r.OpenAPI.Paths[path.Join(pattern, name)] = item
 		}
-		for name, item := range obj.Swagger.Components.Schemas {
-			if _, has := r.Swagger.Components.Schemas[name]; !has {
-				r.Swagger.Components.Schemas[name] = item
+		for name, item := range obj.OpenAPI.Components.Schemas {
+			if _, has := r.OpenAPI.Components.Schemas[name]; !has {
+				r.OpenAPI.Components.Schemas[name] = item
 			}
 		}
-		for name, item := range obj.Swagger.Components.Responses {
-			if _, has := r.Swagger.Components.Responses[name]; !has {
-				r.Swagger.Components.Responses[name] = item
+		for name, item := range obj.OpenAPI.Components.Responses {
+			if _, has := r.OpenAPI.Components.Responses[name]; !has {
+				r.OpenAPI.Components.Responses[name] = item
 			}
 		}
 	}
@@ -176,7 +177,7 @@ func (r *Router) MethodFunc(method, pattern string, handler http.HandlerFunc, op
 	o := operations.Operation{}
 	var err error
 	for _, option := range options {
-		o, err = option(r.Swagger, o)
+		o, err = option(&r.OpenAPI, o)
 		if err != nil {
 			panic(fmt.Sprintf("router [%s %s]: cannot create handler: %v", method, pattern, err))
 		}
@@ -188,7 +189,7 @@ func (r *Router) MethodFunc(method, pattern string, handler http.HandlerFunc, op
 	r.setDefaultResp(&o.Operation)
 
 	r.Mux.MethodFunc(method, pattern, handler)
-	r.Swagger.AddOperation(pattern, method, &o.Operation)
+	r.OpenAPI.AddOperation(pattern, method, &o.Operation)
 }
 
 func (r *Router) Get(pattern string, handler http.HandlerFunc, options []operations.Option) {
@@ -228,7 +229,7 @@ func (r *Router) Head(pattern string, handler http.HandlerFunc, options []operat
 }
 
 func (r *Router) GenerateSpec() (string, error) {
-	b, err := json.MarshalIndent(&r.Swagger, "", " ")
+	b, err := json.MarshalIndent(r.OpenAPI.T, "", " ")
 	if err != nil {
 		return "", err
 	}
@@ -236,12 +237,12 @@ func (r *Router) GenerateSpec() (string, error) {
 }
 
 func (r *Router) ValidateSpec() error {
-	return r.Swagger.Validate(context.Background())
+	return r.OpenAPI.Validate(context.Background())
 }
 
 // FilterRouter returns a router used for verifying middlewares
 func (r *Router) FilterRouter() (routers.Router, error) {
-	router, err := gorillaRouter.NewRouter(r.Swagger)
+	router, err := gorillaRouter.NewRouter(r.OpenAPI.T)
 	if err != nil {
 		return nil, err
 	}
@@ -250,27 +251,28 @@ func (r *Router) FilterRouter() (routers.Router, error) {
 
 // UseRouter copies over the routes and swagger info from the other router.
 func (r *Router) UseRouter(other *Router) *Router {
-	r.Swagger.Info = other.Swagger.Info
+	r.OpenAPI.Info = other.OpenAPI.Info
 	r.Mount("/", other)
 	return r
 }
 
 func (r *Router) Components() openapi.Components {
 	return openapi.Components{
-		Schemas:    openapi.Schemas(r.Swagger.Components.Schemas),
-		Parameters: map[reflect.Type]openapi3.Parameters{},
+		Schemas:         openapi.Schemas(r.OpenAPI.Components.Schemas),
+		RegisteredTypes: r.OpenAPI.RegisteredTypes,
+		Parameters:      map[reflect.Type]openapi3.Parameters{},
 	}
 }
 
 func (r *Router) setStatusDefault(status string, description string, obj interface{}) {
 	resp := openapi3.NewResponse().WithDescription(description)
 	if obj != nil {
-		schema := openapi.SchemaFromObj(obj, openapi.Schemas(r.Swagger.Components.Schemas))
+		schema := openapi.SchemaFromObj(obj, openapi.Schemas(r.OpenAPI.Components.Schemas), r.OpenAPI.RegisteredTypes)
 		resp = resp.WithContent(openapi3.NewContentWithJSONSchemaRef(schema))
 	}
 
 	r.defaultResponses[status] = &openapi3.ResponseRef{Value: resp}
-	r.Swagger.Components.Responses[status] = r.defaultResponses[status]
+	r.OpenAPI.Components.Responses[status] = r.defaultResponses[status]
 }
 
 // SetStatusDefault will set the statusCode for all routes to the supplied object.
@@ -284,8 +286,34 @@ func (r *Router) SetDefaultJSON(description string, obj interface{}) {
 	r.setStatusDefault("default", description, obj)
 }
 
+// RegisterType registers the type as an inline schema
 func (r *Router) RegisterType(obj interface{}, schema *openapi3.Schema) {
 	typ := reflect.TypeOf(obj)
-	name := openapi.GetTypeName(typ)
-	r.Swagger.Components.Schemas[name] = openapi3.NewSchemaRef("", schema)
+	r.OpenAPI.RegisteredTypes[typ] = openapi.TypeOption{Schema: schema}
+}
+
+// RegisterTypeAsComponent registers the objects type as a reference to
+// the schema, which is inserted into the schema.components with the supplied name
+func (r *Router) RegisterTypeAsComponent(obj interface{}, name string, schema *openapi3.Schema) {
+	typ := reflect.TypeOf(obj)
+
+	r.OpenAPI.RegisteredTypes[typ] = openapi.TypeOption{
+		SchemaRef: openapi3.NewSchemaRef(openapi.ComponentSchemasPath+name, schema),
+	}
+	r.OpenAPI.Components.Schemas[name] = openapi3.NewSchemaRef("", schema)
+}
+
+// RegisterTypeAsRef registers the objects type as a reference to
+// the schema located in schema.components with the supplied name
+func (r *Router) RegisterTypeAsRef(obj interface{}, name string) error {
+	schema, has := r.OpenAPI.Components.Schemas[name]
+	if !has {
+		return fmt.Errorf("%s not found in the component schemas", name)
+	}
+
+	typ := reflect.TypeOf(obj)
+	r.OpenAPI.RegisteredTypes[typ] = openapi.TypeOption{
+		SchemaRef: openapi3.NewSchemaRef(openapi.ComponentSchemasPath+name, schema.Value),
+	}
+	return nil
 }

@@ -2,23 +2,100 @@ package router
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"testing"
 	"time"
-
-	. "github.com/zhamlin/chi-openapi/internal/testing"
-	. "github.com/zhamlin/chi-openapi/pkg/openapi/operations"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	. "github.com/zhamlin/chi-openapi/internal/testing"
+	. "github.com/zhamlin/chi-openapi/pkg/openapi/operations"
 )
+
+func dummyHandler(_ http.ResponseWriter, _ *http.Request) {}
+
+func TestRouterRegisterTypes(t *testing.T) {
+	type Time struct{ sql.NullTime }
+	type response struct {
+		Date     time.Time `json:"date"`
+		NullDate Time      `json:"null_date"`
+	}
+	r := NewRouter()
+	r.RegisterType(time.Time{}, openapi3.NewDateTimeSchema())
+	r.RegisterType(Time{}, openapi3.NewDateTimeSchema().WithNullable())
+
+	s := openapi3.NewSchema()
+	s.Description = ""
+
+	r.Get("/", dummyHandler, []Option{
+		JSONResponse(http.StatusOK, "OK", response{}),
+	})
+
+	str, err := r.GenerateSpec()
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = JSONDiff(t, str, `
+    {
+      "components": {
+        "schemas": {
+          "response": {
+            "properties": {
+              "date": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "null_date": {
+                "format": "date-time",
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "type": "object",
+            "required": [
+                "date",
+                "null_date"
+            ]
+          }
+        }
+      },
+      "info": {
+        "title": "Title",
+        "version": "0.0.1"
+      },
+      "openapi": "3.0.0",
+      "paths": {
+        "/": {
+          "get": {
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/response"
+                    }
+                  }
+                },
+                "description": "OK"
+              }
+            }
+          }
+        }
+      }
+    }
+    `)
+	if err != nil {
+		t.Error(err)
+	}
+}
 
 // jsonHeader sets the content type to application/json
 func jsonHeader(next http.Handler) http.Handler {
@@ -45,8 +122,6 @@ func errorHandler(t tester) ErrorHandler {
 	}
 }
 
-func dummyHandler(_ http.ResponseWriter, _ *http.Request) {}
-
 type Response struct {
 	String string    `json:"string"`
 	Int    int       `json:"int" min:"3"`
@@ -55,6 +130,8 @@ type Response struct {
 
 func TestRouterSimpleRoutes(t *testing.T) {
 	r := NewRouter()
+	r.RegisterType(time.Time{}, openapi3.NewDateTimeSchema())
+
 	r.Get("/", dummyHandler, []Option{
 		JSONResponse(http.StatusOK, "OK", Response{}),
 	})
@@ -252,64 +329,6 @@ func responseHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
-func TestRouterVerifyResponse(t *testing.T) {
-	router := NewRouter()
-	router.Get("/", responseHandler, []Option{
-		JSONBody("required data", InputBody{}),
-		JSONResponse(http.StatusOK, "OK", Response{}),
-	})
-
-	filterRouter, err := router.FilterRouter()
-	if err != nil {
-		t.Error(err)
-	}
-	r := NewRouter().
-		With(jsonHeader).
-		With(SetOpenAPIInput(filterRouter, nil)).
-		With(VerifyResponse(errorHandler(t), nil))
-	r.Mount("/", router)
-
-	tests := []struct {
-		name   string
-		method string
-		route  string
-		status int
-		query  url.Values
-	}{
-		{
-			name:   "invalid",
-			method: "GET",
-			route:  "/",
-			status: http.StatusInternalServerError,
-		},
-		{
-			name:   "valid int",
-			method: "GET",
-			route:  "/",
-			status: http.StatusOK,
-			query: url.Values{
-				"int": []string{"3"},
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(test.method, test.route+"?"+test.query.Encode(), nil)
-			req.Header.Add("Content-Type", "application/json")
-
-			w := httptest.NewRecorder()
-			r.ServeHTTP(w, req)
-
-			resp := w.Result()
-			if expected := test.status; resp.StatusCode != expected {
-				respBody, _ := ioutil.ReadAll(resp.Body)
-				t.Errorf("Expected %v, got %v\nbody:\n%v", expected, resp.StatusCode, string(respBody))
-			}
-		})
-	}
-}
-
 func TestRouterDefaultResponse(t *testing.T) {
 	type Error struct {
 		Description string `json:"description"`
@@ -495,7 +514,7 @@ func TestRouterCustomType(t *testing.T) {
 	uuidSchema := openapi3.NewSchema().
 		WithPattern("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 	uuidSchema.Type = "string"
-	router.RegisterType(uuid.UUID{}, uuidSchema)
+	router.RegisterTypeAsComponent(uuid.UUID{}, "UUID", uuidSchema)
 
 	type testStruct struct {
 		ID uuid.UUID `json:"id"`
@@ -618,7 +637,7 @@ func BenchmarkRouter(b *testing.B) {
 		r := NewRouter().
 			With(jsonHeader).
 			With(SetOpenAPIInput(filterRouter, nil)).
-			With(VerifyResponse(errorHandler(b), nil))
+			With(VerifyResponse(errorHandler(b)))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
@@ -660,7 +679,7 @@ func BenchmarkRouter(b *testing.B) {
 			With(jsonHeader).
 			With(SetOpenAPIInput(filterRouter, nil)).
 			With(VerifyRequest(errorHandler(b))).
-			With(VerifyResponse(errorHandler(b), nil))
+			With(VerifyResponse(errorHandler(b)))
 		r.Get("/", responseHandler, []Option{
 			JSONBody("required data", InputBody{}),
 			JSONResponse(200, "OK", Response{}),
@@ -671,5 +690,4 @@ func BenchmarkRouter(b *testing.B) {
 			r.ServeHTTP(w, req)
 		}
 	})
-
 }

@@ -41,7 +41,7 @@ func TestParams(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params, err := openapi.ParamsFromObj(test.obj, nil)
+			params, err := openapi.ParamsFromObj(test.obj, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -130,7 +130,7 @@ func TestParamsLocation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params, err := openapi.ParamsFromObj(test.obj, nil)
+			params, err := openapi.ParamsFromObj(test.obj, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -237,7 +237,7 @@ func TestParamsSpecificSettings(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params, err := openapi.ParamsFromObj(test.obj, nil)
+			params, err := openapi.ParamsFromObj(test.obj, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

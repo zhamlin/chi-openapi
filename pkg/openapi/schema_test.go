@@ -1,9 +1,11 @@
 package openapi_test
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	. "github.com/zhamlin/chi-openapi/internal/testing"
 	"github.com/zhamlin/chi-openapi/pkg/openapi"
 )
@@ -212,7 +214,7 @@ func TestSchema(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(test.obj, schemas)
+			schema := openapi.SchemaFromObj(test.obj, schemas, nil)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -334,7 +336,7 @@ func TestSchemaNumberFormats(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(test.obj, schemas)
+			schema := openapi.SchemaFromObj(test.obj, schemas, nil)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -470,13 +472,16 @@ func TestSchemaStringFormats(t *testing.T) {
         `},
 	}
 
+	registeredTypes := openapi.RegisteredTypes{}
+	registeredTypes[reflect.TypeOf(time.Time{})] = openapi.TypeOption{Schema: openapi3.NewDateTimeSchema()}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var schemas openapi.Schemas = nil
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(test.obj, schemas)
+			schema := openapi.SchemaFromObj(test.obj, schemas, registeredTypes)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -588,13 +593,16 @@ func TestSchemaArrays(t *testing.T) {
         `},
 	}
 
+	registeredTypes := openapi.RegisteredTypes{}
+	registeredTypes[reflect.TypeOf(time.Time{})] = openapi.TypeOption{Schema: openapi3.NewDateTimeSchema()}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var schemas openapi.Schemas = nil
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(test.obj, schemas)
+			schema := openapi.SchemaFromObj(test.obj, schemas, registeredTypes)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -664,7 +672,7 @@ func TestSchemaMaps(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(test.obj, schemas)
+			schema := openapi.SchemaFromObj(test.obj, schemas, nil)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -745,7 +753,7 @@ func TestSchemaEnums(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(test.obj, schemas)
+			schema := openapi.SchemaFromObj(test.obj, schemas, nil)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
@@ -800,7 +808,7 @@ func TestOpenAPIDescriptionFunc(t *testing.T) {
 			if test.schemas {
 				schemas = openapi.Schemas{}
 			}
-			schema := openapi.SchemaFromObj(test.obj, schemas)
+			schema := openapi.SchemaFromObj(test.obj, schemas, nil)
 			if err := JSONDiff(t, JSONT(t, schema), test.expected); err != nil {
 				t.Error(err)
 				if test.schemas {
