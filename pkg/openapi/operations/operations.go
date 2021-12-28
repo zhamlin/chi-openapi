@@ -14,14 +14,14 @@ type Operation struct {
 	openapi3.Operation
 }
 
-type API = *openapi.OpenAPI
-type Option func(API, Operation) (Operation, error)
+type OpenAPI = *openapi.OpenAPI
+type Option func(OpenAPI, Operation) (Operation, error)
 type Options []Option
 
 type ExtensionData map[string]interface{}
 
 func Extensions(data ExtensionData) Option {
-	return func(_ API, o Operation) (Operation, error) {
+	return func(_ OpenAPI, o Operation) (Operation, error) {
 		o.Extensions = data
 		return o, nil
 	}
@@ -29,7 +29,7 @@ func Extensions(data ExtensionData) Option {
 
 // NoSecurity sets the security options to an empty array for this operation
 func NoSecurity() Option {
-	return func(_ API, o Operation) (Operation, error) {
+	return func(_ OpenAPI, o Operation) (Operation, error) {
 		o.Security = openapi3.NewSecurityRequirements()
 		return o, nil
 	}
@@ -37,7 +37,7 @@ func NoSecurity() Option {
 
 // Security sets the security for the operation
 func Security(name string, scopes ...string) Option {
-	return func(_ API, o Operation) (Operation, error) {
+	return func(_ OpenAPI, o Operation) (Operation, error) {
 		if o.Security == nil {
 			o.Security = openapi3.NewSecurityRequirements()
 		}
@@ -54,28 +54,28 @@ func Security(name string, scopes ...string) Option {
 }
 
 func ID(id string) Option {
-	return func(_ API, o Operation) (Operation, error) {
+	return func(_ OpenAPI, o Operation) (Operation, error) {
 		o.OperationID = id
 		return o, nil
 	}
 }
 
 func Tags(tags ...string) Option {
-	return func(_ API, o Operation) (Operation, error) {
+	return func(_ OpenAPI, o Operation) (Operation, error) {
 		o.Tags = tags
 		return o, nil
 	}
 }
 
 func Deprecated() Option {
-	return func(_ API, o Operation) (Operation, error) {
+	return func(_ OpenAPI, o Operation) (Operation, error) {
 		o.Deprecated = true
 		return o, nil
 	}
 }
 
 func Summary(summary string) Option {
-	return func(_ API, o Operation) (Operation, error) {
+	return func(_ OpenAPI, o Operation) (Operation, error) {
 		summaryLines := strings.Split(summary, "\n")
 		for i, line := range summaryLines {
 			line = strings.Trim(line, "\n")
@@ -89,7 +89,7 @@ func Summary(summary string) Option {
 }
 
 func DefaultJSONResponse(description string, model interface{}) Option {
-	return func(s API, o Operation) (Operation, error) {
+	return func(s OpenAPI, o Operation) (Operation, error) {
 		resp := openapi3.NewResponse().WithDescription(description)
 		if model == nil {
 			o.Responses["default"] = &openapi3.ResponseRef{Value: resp}
@@ -104,7 +104,7 @@ func DefaultJSONResponse(description string, model interface{}) Option {
 }
 
 func Params(model interface{}) Option {
-	return func(s API, o Operation) (Operation, error) {
+	return func(s OpenAPI, o Operation) (Operation, error) {
 		var err error
 		o.Parameters, err = openapi.ParamsFromObj(model, openapi.Schemas(s.Components.Schemas), s.RegisteredTypes)
 		if err != nil {
@@ -115,7 +115,7 @@ func Params(model interface{}) Option {
 }
 
 func FileResponse(code int, description string) Option {
-	return func(s API, o Operation) (Operation, error) {
+	return func(s OpenAPI, o Operation) (Operation, error) {
 		if o.Responses == nil {
 			o.Responses = openapi3.Responses{}
 
@@ -140,7 +140,7 @@ func FileResponse(code int, description string) Option {
 }
 
 func FormBody(description string, model interface{}) Option {
-	return func(s API, o Operation) (Operation, error) {
+	return func(s OpenAPI, o Operation) (Operation, error) {
 		if s.Components.Schemas == nil {
 			s.Components.Schemas = openapi3.Schemas{}
 		}
@@ -158,7 +158,7 @@ func FormBody(description string, model interface{}) Option {
 }
 
 func JSONBodyRequired(description string, model interface{}) Option {
-	return func(s API, o Operation) (Operation, error) {
+	return func(s OpenAPI, o Operation) (Operation, error) {
 		if s.Components.Schemas == nil {
 			s.Components.Schemas = openapi3.Schemas{}
 		}
@@ -173,7 +173,7 @@ func JSONBodyRequired(description string, model interface{}) Option {
 }
 
 func JSONBody(description string, model interface{}) Option {
-	return func(s API, o Operation) (Operation, error) {
+	return func(s OpenAPI, o Operation) (Operation, error) {
 		if s.Components.Schemas == nil {
 			s.Components.Schemas = openapi3.Schemas{}
 		}
@@ -188,7 +188,7 @@ func JSONBody(description string, model interface{}) Option {
 }
 
 func JSONResponse(code int, description string, model interface{}) Option {
-	return func(s API, o Operation) (Operation, error) {
+	return func(s OpenAPI, o Operation) (Operation, error) {
 		if o.Responses == nil {
 			o.Responses = openapi3.Responses{}
 
