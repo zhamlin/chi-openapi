@@ -10,6 +10,20 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
+// trimString removes extra lines and new spaces from each
+// line in the provided str
+func trimString(str string) string {
+	strLines := strings.Split(str, "\n")
+	for i, line := range strLines {
+		line = strings.Trim(line, "\n")
+		line = strings.TrimSpace(line)
+		strLines[i] = line
+	}
+	str = strings.Join(strLines, "\n")
+	return strings.Trim(str, "\n")
+
+}
+
 type Operation struct {
 	openapi3.Operation
 }
@@ -76,21 +90,14 @@ func Deprecated() Option {
 
 func Summary(summary string) Option {
 	return func(_ OpenAPI, o Operation) (Operation, error) {
-		summaryLines := strings.Split(summary, "\n")
-		for i, line := range summaryLines {
-			line = strings.Trim(line, "\n")
-			line = strings.TrimSpace(line)
-			summaryLines[i] = line
-		}
-		summary = strings.Join(summaryLines, "\n")
-		o.Summary = strings.Trim(summary, "\n")
+		o.Summary = trimString(summary)
 		return o, nil
 	}
 }
 
 func DefaultJSONResponse(description string, model interface{}) Option {
 	return func(s OpenAPI, o Operation) (Operation, error) {
-		resp := openapi3.NewResponse().WithDescription(description)
+		resp := openapi3.NewResponse().WithDescription(trimString(description))
 		if model == nil {
 			o.Responses["default"] = &openapi3.ResponseRef{Value: resp}
 			return o, nil
@@ -121,18 +128,16 @@ func FileResponse(code int, description string) Option {
 
 		}
 
-		schema := openapi3.NewSchema()
-		schema.Type = "string"
-		schema.Format = "binary"
+		schema := openapi3.NewStringSchema().
+			WithFormat("binary")
 
 		response := &openapi3.ResponseRef{
-			Value: &openapi3.Response{
-				Description: &description,
-				Content: openapi3.Content{
+			Value: openapi3.NewResponse().
+				WithDescription(trimString(description)).
+				WithContent(openapi3.Content{
 					"application/pdf":  openapi3.NewMediaType().WithSchema(schema),
 					"application/tiff": openapi3.NewMediaType().WithSchema(schema),
-				},
-			},
+				}),
 		}
 		o.Responses[fmt.Sprintf("%d", code)] = response
 		return o, nil
@@ -150,7 +155,7 @@ func FormBody(description string, model interface{}) Option {
 		// }
 		requestBody := openapi3.NewRequestBody().
 			WithContent(openapi3.NewContentWithFormDataSchemaRef(schema)).
-			WithDescription(description).
+			WithDescription(trimString(description)).
 			WithRequired(false)
 		o.RequestBody = &openapi3.RequestBodyRef{Value: requestBody}
 		return o, nil
@@ -165,7 +170,7 @@ func JSONBodyRequired(description string, model interface{}) Option {
 		schema := openapi.SchemaFromObj(model, openapi.Schemas(s.Components.Schemas), s.RegisteredTypes)
 		requestBody := openapi3.NewRequestBody().
 			WithContent(openapi3.NewContentWithJSONSchemaRef(schema)).
-			WithDescription(description).
+			WithDescription(trimString(description)).
 			WithRequired(true)
 		o.RequestBody = &openapi3.RequestBodyRef{Value: requestBody}
 		return o, nil
@@ -180,7 +185,7 @@ func JSONBody(description string, model interface{}) Option {
 		schema := openapi.SchemaFromObj(model, openapi.Schemas(s.Components.Schemas), s.RegisteredTypes)
 		requestBody := openapi3.NewRequestBody().
 			WithContent(openapi3.NewContentWithJSONSchemaRef(schema)).
-			WithDescription(description).
+			WithDescription(trimString(description)).
 			WithRequired(false)
 		o.RequestBody = &openapi3.RequestBodyRef{Value: requestBody}
 		return o, nil
@@ -195,7 +200,7 @@ func JSONResponse(code int, description string, model interface{}) Option {
 		}
 		if model == nil {
 			response := &openapi3.ResponseRef{
-				Value: &openapi3.Response{Description: &description},
+				Value: openapi3.NewResponse().WithDescription(trimString(description)),
 			}
 			o.Responses[fmt.Sprintf("%d", code)] = response
 			return o, nil
@@ -204,10 +209,9 @@ func JSONResponse(code int, description string, model interface{}) Option {
 		// TODO: check for content first before just overwriting it
 		// "application/json": NewMediaType().WithSchema(schema),
 		response := &openapi3.ResponseRef{
-			Value: &openapi3.Response{
-				Description: &description,
-				Content:     openapi3.NewContentWithJSONSchemaRef(schema),
-			},
+			Value: openapi3.NewResponse().
+				WithDescription(trimString(description)).
+				WithContent(openapi3.NewContentWithJSONSchemaRef(schema)),
 		}
 		o.Responses[fmt.Sprintf("%d", code)] = response
 		return o, nil
