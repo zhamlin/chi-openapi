@@ -44,6 +44,7 @@ func (r *ReflectRouter) SetParent(parent *ReflectRouter) *ReflectRouter {
 	r.c = parent.c
 	r.handleFn = parent.handleFn
 	r.OpenAPI.Components = parent.OpenAPI.Components
+	r.OpenAPI.RegisteredTypes = parent.OpenAPI.RegisteredTypes
 	r.hooks = parent.hooks
 	r.OpenAPI.Info = parent.OpenAPI.Info
 	return r

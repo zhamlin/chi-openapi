@@ -187,6 +187,16 @@ func LoadQueryParam(r *http.Request, typ reflect.Type, param *openapi3.Parameter
 				return result, fmt.Errorf("query param '%v' is required", param.Name)
 			}
 			if defValue := param.Schema.Value.Default; defValue != nil {
+				// if this type implements TextUnmarshaler and the default value is a string,
+                // attempt to unmarhsal the default value into the type
+				if isTextUnmarshaller {
+					switch v := defValue.(type) {
+					case string:
+						newTyp := reflect.New(typ).Interface().(encoding.TextUnmarshaler)
+						err := newTyp.UnmarshalText([]byte(v))
+						return reflect.ValueOf(newTyp).Elem(), err
+					}
+				}
 				return reflect.ValueOf(defValue), nil
 			}
 			return reflect.New(typ).Elem(), nil
