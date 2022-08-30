@@ -284,7 +284,7 @@ var schemaFuncTags = map[string]schemaTagFunc{
 			case "boolean":
 				s.Default = tagBoolValue(value)
 			case "integer":
-				n, err := strconv.Atoi(value)
+				n, err := strconv.ParseFloat(value, 64)
 				if err != nil {
 					return err
 				}
