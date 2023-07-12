@@ -1,22 +1,16 @@
 module github.com/zhamlin/chi-openapi
 
-go 1.17
+go 1.20
 
 require (
-	github.com/felixge/httpsnoop v1.0.1
-	github.com/getkin/kin-openapi v0.99.0
 	github.com/go-chi/chi/v5 v5.0.7
-	github.com/google/uuid v1.1.2
-	github.com/nsf/jsondiff v0.0.0-20200515183724-f29ed568f4ce
-	github.com/pkg/errors v0.9.1
+	github.com/sv-tools/openapi v0.2.1
 )
 
+// test dependencies
 require (
-	github.com/go-openapi/jsonpointer v0.19.5 // indirect
-	github.com/go-openapi/swag v0.19.5 // indirect
-	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/invopop/yaml v0.1.0 // indirect
-	github.com/mailru/easyjson v0.0.0-20190626092158-b2ccc519800e // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	github.com/google/go-cmp v0.5.9
+	github.com/nsf/jsondiff v0.0.0-20200515183724-f29ed568f4ce
 )
+
+require gopkg.in/yaml.v3 v3.0.1 // indirect
