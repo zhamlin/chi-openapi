@@ -26,11 +26,3 @@ func (s Set[K]) Items() []K {
 	}
 	return items
 }
-
-func (s Set[K]) First() (K, bool) {
-	for item := range s {
-		return item, true
-	}
-	var k K
-	return k, false
-}

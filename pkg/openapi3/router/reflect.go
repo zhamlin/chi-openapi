@@ -287,7 +287,9 @@ func tryLoadParam(info RouteInfo, field reflect.StructField) (reflect.Value, err
 
 type structField struct {
 	reflect.Type
-	index         int
+	// track the structField via index vs reflect.StructField
+	// so this type can be used in a map
+	fieldIndex    int
 	needProvider  bool
 	isRequestBody bool
 }
@@ -315,7 +317,7 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 		}
 
 		if paramLocation, _ := openapi3.GetParameterLocationTag(field); paramLocation != "" {
-			// We dont know what route this is for at this point so we cant verify
+			// We dont know what route this is for at this point, so there is no way to verify
 			// if this query param is allowed in this handler. The function loading the
 			// parameter will handle verifying it
 			return nil
@@ -325,7 +327,7 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 			if v := field.Tag.Get("request"); v == "body" {
 				inputTypes.Add(structField{
 					Type:          field.Type,
-					index:         idx,
+					fieldIndex:    idx,
 					needProvider:  true,
 					isRequestBody: true,
 				})
@@ -367,7 +369,7 @@ func createProviderForJsonRequestBody(
 		if err := loader(req, obj.Interface()); err != nil {
 			return []reflect.Value{reflect.Zero(t), reflect.ValueOf(err)}
 		}
-		// reflect.New returns a pointer, and we want to return the object
+		// reflect.New returns a pointer so return the object directly
 		return []reflect.Value{reflect.Indirect(obj), reflect.Zero(reflectUtil.ErrType)}
 	}
 	fn := reflect.MakeFunc(fnType, dynamicFunc)
@@ -390,7 +392,7 @@ func createProviderForType(
 	inputTypes := []reflect.Type{}
 	for field := range fields {
 		if field.needProvider && field.isRequestBody {
-			structField := typ.Field(field.index)
+			structField := typ.Field(field.fieldIndex)
 			requestBody = &structField
 			fn := createProviderForJsonRequestBody(field.Type, loader)
 			c.Provide(fn)
@@ -525,7 +527,6 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 			// container already knows how to create this type
 			continue
 		}
-
 		if p.Kind() != reflect.Struct {
 			// this type is not in the container, nor is a struct.
 			// ignore this and let container.CreatePlan give a better error

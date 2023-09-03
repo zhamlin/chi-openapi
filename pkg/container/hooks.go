@@ -10,7 +10,7 @@ import (
 
 type hook func(Context, error) error
 
-func newWithHooks() containerWithHooks {
+func newContainerWithHooks() containerWithHooks {
 	return containerWithHooks{
 		container: newContainer(),
 		hooks:     map[reflect.Type]hook{},

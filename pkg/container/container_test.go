@@ -2,6 +2,7 @@ package container_test
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -77,6 +78,22 @@ func TestContainer(t *testing.T) {
 		err := c.Create(&value)
 		MustMatch(t, err, nil)
 		MustMatch(t, value, expectedString)
+	})
+
+	t.Run("show values are created with deps", func(t *testing.T) {
+		c := container.New()
+		c.Provide(func(d int) string {
+			return fmt.Sprintf("%d", d)
+		})
+
+		c.Provide(func() int {
+			return 1
+		})
+
+		var value string
+		err := c.Create(&value)
+		MustMatch(t, err, nil)
+		MustMatch(t, value, "1")
 	})
 
 	t.Run("show values are cached", func(t *testing.T) {

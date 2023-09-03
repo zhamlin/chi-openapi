@@ -36,7 +36,7 @@ func Cast[T any](obj any) (any, bool) {
 type Container = containerWithHooks
 
 func New() Container {
-	return newWithHooks()
+	return newContainerWithHooks()
 }
 
 func newContainer() container {
@@ -60,9 +60,8 @@ func newContext(args ...any) context {
 		argValue := reflect.ValueOf(args[i])
 		if argValue.Kind() == reflect.Ptr &&
 			argValue.Elem().Kind() == reflect.Interface {
-			// when using an interface its used directly vs
-			// via a reference, so if we have a reference to an interface
-			// assume its actually the interface we want
+			// if a pointer to an interface if passed in assume it came
+			// from container.Cast and get the value to the interface directly
 			argValue = argValue.Elem()
 		}
 		ctx.set(argValue)
@@ -71,9 +70,8 @@ func newContext(args ...any) context {
 }
 
 type context struct {
-	// map types to a value
 	// uintptr represents the pointer to reflect.Value(typ).Pointer()
-	// to speed up map access
+	// to speed up map access instead of using reflect.Type
 	cache map[uintptr]reflect.Value
 }
 
@@ -92,7 +90,7 @@ func (c context) Run(fn any) error {
 }
 
 func (c context) set(value reflect.Value) {
-	// If we already have the value don't update it as it was
+	// If the value is already set don't update it as it was
 	// set from the args when creating the context. No value should
 	// be created multiple times or have multiple sources in any other
 	// scenario
@@ -359,9 +357,9 @@ func getRespAndError(outputs []reflect.Value) (any, error) {
 }
 
 type Plan struct {
-	nodeIndexes []int
-	fnValue     reflect.Value
-	fnParams    []reflect.Type
+	providers []*nodeTypeProvider
+	fn        reflect.Value
+	fnParams  []reflect.Type
 
 	// Track the max array size needed to contain all of the functions params.
 	// This allows one allocation for all of the function inputs once per plan run
@@ -381,8 +379,8 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 
 	fnParams := reflectUtil.GetFuncParams(fnType)
 	plan := Plan{
-		nodeIndexes:   []int{},
-		fnValue:       reflect.ValueOf(fn),
+		providers:     []*nodeTypeProvider{},
+		fn:            reflect.ValueOf(fn),
 		fnParams:      fnParams,
 		maxParamCount: len(fnParams),
 	}
@@ -390,9 +388,9 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 	neededTypes := internal.NewSet[reflect.Type]()
 	// from the provided index recursively get the indexes of all
 	// the provider nodes required to create it.
-	var visit func(idx int) []int
-	visit = func(idx int) []int {
-		result := []int{}
+	var visit func(idx int) []*nodeTypeProvider
+	visit = func(idx int) []*nodeTypeProvider {
+		result := []*nodeTypeProvider{}
 		for edgeIndex := range c.graph.EdgesToFrom[idx] {
 			n, err := c.graph.Get(edgeIndex)
 			if err != nil {
@@ -407,7 +405,7 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 						plan.maxParamCount = c
 					}
 				}
-				result = append(result, edgeIndex)
+				result = append(result, &provider)
 			} else {
 				neededTypes.Add(n.refelctType)
 			}
@@ -441,7 +439,7 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 		if !canCreateType(pType, idx, has) {
 			return plan, fmt.Errorf("container can not create the type: %s", pType.String())
 		}
-		plan.nodeIndexes = append(plan.nodeIndexes, visit(idx)...)
+		plan.providers = append(plan.providers, visit(idx)...)
 	}
 
 	// verify the needed types can be created
@@ -456,10 +454,10 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 	}
 
 	// reverse array so nodes with no deps come first
-	internal.Reverse(plan.nodeIndexes)
+	internal.Reverse(plan.providers)
 
 	// remove duplicates to avoid extra work
-	plan.nodeIndexes = internal.Unique(plan.nodeIndexes)
+	plan.providers = internal.Unique(plan.providers)
 	return plan, nil
 }
 
@@ -470,41 +468,32 @@ func (c container) RunPlan(plan Plan, args ...any) (any, error) {
 var ErrInvalidPlan = errors.New("incorrect plan provided")
 
 func (c container) runPlanWithContext(ctx context, plan Plan) (any, error) {
-	if !plan.fnValue.IsValid() {
+	if !plan.fn.IsValid() {
 		return nil, ErrInvalidPlan
 	}
 
 	inputs := make([]reflect.Value, plan.maxParamCount)
-	loadParams := func(params []reflect.Type) error {
+	callFn := func(fn reflect.Value, params []reflect.Type) ([]reflect.Value, error) {
 		for i, pType := range params {
 			param, has := ctx.Get(pType)
 			if !has {
 				// this _shouldn't_ happen unless this type was ignored during
 				// plan creation
-				return fmt.Errorf("context did not have %s", pType.String())
+				return nil, fmt.Errorf("context did not have %s", pType.String())
 			}
 			inputs[i] = param
 		}
-		return nil
+		return fn.Call(inputs[:len(params)]), nil
 	}
 
-	for _, idx := range plan.nodeIndexes {
-		node, err := c.graph.Get(idx)
-		if err != nil {
-			return nil, err
-		}
-
-		provider, ok := node.typ.(nodeTypeProvider)
-		if !ok {
-			return nil, fmt.Errorf("expected provider node at index: %d", idx)
-		}
-
+	for _, provider := range plan.providers {
 		output := []reflect.Value{provider.value}
 		if provider.isFunc() {
-			if err := loadParams(provider.params); err != nil {
+			var err error
+			output, err = callFn(provider.value, provider.params)
+			if err != nil {
 				return nil, err
 			}
-			output = provider.value.Call(inputs[:len(provider.params)])
 		}
 
 		for _, o := range output {
@@ -515,10 +504,10 @@ func (c container) runPlanWithContext(ctx context, plan Plan) (any, error) {
 		}
 	}
 
-	if err := loadParams(plan.fnParams); err != nil {
+	output, err := callFn(plan.fn, plan.fnParams)
+	if err != nil {
 		return nil, err
 	}
-	output := plan.fnValue.Call(inputs[:len(plan.fnParams)])
 	return getRespAndError(output)
 }
 
@@ -550,8 +539,8 @@ func isNonNilErr(v reflect.Value) error {
 	}
 	isErrType := v.Type() == reflectUtil.ErrType
 	if isErrType {
-		// panic if this fails because we should have
-		// checked for the valid type above
+		// panic if this fails, check above should ensure
+		// that does not happen
 		outErr := v.Interface().(error)
 		return outErr
 	}
