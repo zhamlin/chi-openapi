@@ -75,6 +75,8 @@ type Router struct {
 
 	// TODO: move to config
 	setOperationID bool
+
+	setRouteInfo bool
 }
 
 func (r Router) Errors() []error {
@@ -415,11 +417,14 @@ func (r *Router) Method(method, pattern string, h http.HandlerFunc, options ...o
 		}
 	}
 
-	// TODO: make this optional
-	// Because chi.Context works, to get the full path needed to match to an openapi path the
-	// middleware needs to run at the _last_ router (if there are any mounted routers). The
-	// easiest place to do so is right before the handler
-	r.mux.With(addRouteInfo(r)).Method(method, pattern, h)
+	if r.setRouteInfo {
+		// Because chi.Context works, to get the full path needed to match to an openapi path the
+		// middleware needs to run at the _last_ router (if there are any mounted routers). The
+		// easiest place to do so is right before the handler
+		r.mux.With(addRouteInfo(r)).Method(method, pattern, h)
+	} else {
+		r.mux.Method(method, pattern, h)
+	}
 }
 
 func (r *Router) Connect(pattern string, h http.HandlerFunc, options ...operations.Option) {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	. "github.com/zhamlin/chi-openapi/internal/testing"
+	"github.com/zhamlin/chi-openapi/pkg/container"
 	. "github.com/zhamlin/chi-openapi/pkg/openapi3/operations"
 	"github.com/zhamlin/chi-openapi/pkg/openapi3/router"
 )
@@ -551,10 +552,13 @@ func TestDepRouterNested(t *testing.T) {
 		},
 	)
 
-	h := func(r *http.Request) error {
+	h := func(r *http.Request, params struct {
+		ID string `path:"id"`
+	}) error {
 		info, has := router.GetRouteInfo(r.Context())
 		MustMatch(t, has, true)
 		MustMatch(t, info.URLParams["id"], "1")
+		MustMatch(t, params.ID, "1")
 		return errors.New("error")
 	}
 	subSubRouter.Route("/object", func(r *router.DepRouter) {
@@ -567,6 +571,24 @@ func TestDepRouterNested(t *testing.T) {
 	resp := do(rootRouter, req)
 	// the rootRouter RequestHandler takes precedence over all routers below it
 	MustMatch(t, resp.Code, http.StatusTeapot)
+}
+
+func TestDepRouterNoRouteInfoNeeded(t *testing.T) {
+	c := container.New()
+	type A struct{}
+	c.Provide(A{})
+
+	r := newDepRouter(t).WithContainer(c)
+	h := func(w http.ResponseWriter, r *http.Request, _ A) {
+		_, has := router.GetRouteInfo(r.Context())
+		MustMatch(t, has, false)
+		w.WriteHeader(http.StatusLocked)
+	}
+	r.Get("/", h)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	resp := do(r, req)
+	MustMatch(t, resp.Code, http.StatusLocked)
 }
 
 func BenchmarkDepRouter(b *testing.B) {

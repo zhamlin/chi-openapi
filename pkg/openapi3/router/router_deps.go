@@ -228,8 +228,10 @@ func (r *DepRouter) Method(method, pattern string, handler any, options ...opera
 		}
 	}
 
+	needsRouteInfo := false
 	if len(fnInfo.params) > 0 {
 		options = append(options, addParams(fnInfo.params))
+		needsRouteInfo = true
 	}
 	if body := fnInfo.requestBody; body.Type != nil {
 		desc := body.Tag.Get("doc")
@@ -243,9 +245,15 @@ func (r *DepRouter) Method(method, pattern string, handler any, options ...opera
 			}
 		}
 		options = append(options, operations.BodyObj(desc, body.Type, required))
+		needsRouteInfo = true
 	}
 
-	r.router.Method(method, pattern, h, options...)
+	oldSetRouteInfo := r.router.setRouteInfo
+	{
+		r.router.setRouteInfo = needsRouteInfo
+		r.router.Method(method, pattern, h, options...)
+	}
+	r.router.setRouteInfo = oldSetRouteInfo
 }
 
 func (r *DepRouter) Connect(pattern string, h any, options ...operations.Option) {
