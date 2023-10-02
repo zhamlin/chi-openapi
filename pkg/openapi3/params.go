@@ -3,6 +3,7 @@ package openapi3
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/sv-tools/openapi/spec"
 	"github.com/zhamlin/chi-openapi/internal"
@@ -144,10 +145,20 @@ func paramsFromStruct(schemer jsonschema.Schemer, typ reflect.Type) ([]Parameter
 			reflectUtil.PrimitiveKind.Has(field.Type.Kind()) ||
 				reflectUtil.ArrayKind.Has(field.Type.Kind())
 		hasTextUnmarshal := reflectUtil.TypeImplementsTextUnmarshal(field.Type)
-		canLoadParam := isPrimitiveType || hasTextUnmarshal || style == ParameterStyleDeepObject
+		canLoadParam := isPrimitiveType ||
+			hasTextUnmarshal ||
+			style == ParameterStyleDeepObject
+
 		if !canLoadParam {
-			// TODO: better error
-			panic(fmt.Sprintf("can not figure out how to load param: `%s` (%s) for %s", paramName, field.Type, typ))
+			wanted := []string{
+				"ParameterStyleDeepObject",
+				reflectUtil.TextUnmarshallerType.String(),
+				fmt.Sprintf("%v", reflectUtil.ArrayKind.Items()),
+				fmt.Sprintf("%v", reflectUtil.PrimitiveKind.Items()),
+			}
+			want := fmt.Sprintf("wanted:\n\t - %s", strings.Join(wanted, "\n\t - "))
+			return fmt.Errorf("can not load param: `%s` (%s) for %s:\n\t%s",
+				paramName, field.Type, typ, want)
 		}
 
 		params = append(params, p)

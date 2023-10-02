@@ -282,8 +282,9 @@ func (c container) provideFn(fn reflect.Value) {
 func (c container) createWithCtx(ctx context, obj any) error {
 	objType := reflect.TypeOf(obj)
 	if objType.Kind() != reflect.Ptr {
-		panic(fmt.Sprintf("got: %T expected reference to type", obj))
+		return fmt.Errorf("got: %T expected reference to type", obj)
 	}
+
 	value, err := c.createType(ctx, objType.Elem())
 	if err != nil {
 		return err
