@@ -3,7 +3,6 @@ package openapi3
 import (
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/sv-tools/openapi/spec"
 	"github.com/zhamlin/chi-openapi/internal"
@@ -63,6 +62,20 @@ const (
 	ParameterLocationHeader ParameterLocation = spec.InHeader
 	ParameterLocationCookie ParameterLocation = spec.InCookie
 )
+
+func paramDefaultStyle(loc ParameterLocation) ParameterStyle {
+	switch loc {
+	case ParameterLocationPath:
+		return ParameterStyleSimple
+	case ParameterLocationQuery:
+		return ParameterStyleForm
+	case ParameterLocationHeader:
+		return ParameterStyleSimple
+	case ParameterLocationCookie:
+		return ParameterStyleForm
+	}
+	return ParameterStyleNone
+}
 
 func ParameterLocationFromString(str string) (ParameterLocation, error) {
 	switch ParameterLocation(str) {
@@ -136,35 +149,68 @@ func paramsFromStruct(schemer jsonschema.Schemer, typ reflect.Type) ([]Parameter
 			return err
 		}
 		style := ParameterStyle(p.Style)
+		if style == "" {
+			style = paramDefaultStyle(paramLoc)
+		}
+
 		if err := validateStyleWithType(field.Type, style, paramLoc); err != nil {
 			return err
 		}
 
-		// verify the param can be loaded
-		isPrimitiveType :=
-			reflectUtil.PrimitiveKind.Has(field.Type.Kind()) ||
-				reflectUtil.ArrayKind.Has(field.Type.Kind())
-		hasTextUnmarshal := reflectUtil.TypeImplementsTextUnmarshal(field.Type)
-		canLoadParam := isPrimitiveType ||
-			hasTextUnmarshal ||
-			style == ParameterStyleDeepObject
+		canLoadParam := false
+		switch paramLoc {
+		case ParameterLocationPath:
+			canLoadParam = canLoadPathParam(field.Type, style)
+		case ParameterLocationQuery:
+			canLoadParam = canLoadQueryParam(field.Type, style)
+		default:
+			// TODO: verify ParameterLocationHeader
+			// TODO: verify ParameterLocationCookie
+			canLoadParam = true
+		}
 
 		if !canLoadParam {
-			wanted := []string{
-				"ParameterStyleDeepObject",
-				reflectUtil.TextUnmarshallerType.String(),
-				fmt.Sprintf("%v", reflectUtil.ArrayKind.Items()),
-				fmt.Sprintf("%v", reflectUtil.PrimitiveKind.Items()),
-			}
-			want := fmt.Sprintf("wanted:\n\t - %s", strings.Join(wanted, "\n\t - "))
-			return fmt.Errorf("can not load param: `%s` (%s) for %s:\n\t%s",
-				paramName, field.Type, typ, want)
+			return fmt.Errorf("can not load %s param: `%s` (%s) for %s",
+				paramLoc, paramName, field.Type, typ)
 		}
 
 		params = append(params, p)
 		return nil
 	})
 	return params, err
+}
+
+func canLoadPathParam(typ reflect.Type, style ParameterStyle) bool {
+	if reflectUtil.TypeImplementsTextUnmarshal(typ) {
+		return true
+	}
+
+	if reflectUtil.PrimitiveKind.Has(typ.Kind()) {
+		return true
+	}
+	return false
+}
+
+func canLoadQueryParam(typ reflect.Type, style ParameterStyle) bool {
+	if reflectUtil.TypeImplementsTextUnmarshal(typ) {
+		return true
+	}
+
+	kind := typ.Kind()
+	if reflectUtil.PrimitiveKind.Has(kind) {
+		return true
+	}
+
+	if reflectUtil.ArrayKind.Has(kind) {
+		elemType := typ.Elem()
+		return canLoadQueryParam(elemType, style)
+	}
+
+	if kind == reflect.Struct {
+		return style == ParameterStyleDeepObject
+	}
+
+	return false
 }
 
 type paramValidion struct {
@@ -207,7 +253,8 @@ var paramValidations = map[ParameterStyle]paramValidion{
 			ParameterLocationPath,
 			ParameterLocationHeader,
 		},
-		kinds: reflectUtil.ArrayKind,
+		// TODO: spec mentions only array kind allowed
+		kinds: kinds(reflectUtil.PrimitiveKind, reflectUtil.ArrayKind),
 	},
 	ParameterStyleForm: {
 		in: []ParameterLocation{
@@ -245,7 +292,11 @@ var paramValidations = map[ParameterStyle]paramValidion{
 func validateStyleWithType(typ reflect.Type, style ParameterStyle, loc ParameterLocation) error {
 	validation, has := paramValidations[style]
 	if !has {
-		return nil
+		return fmt.Errorf("invalid style: %q", style)
+	}
+
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
 	}
 
 	correctKind := validation.kinds.Has(typ.Kind())
