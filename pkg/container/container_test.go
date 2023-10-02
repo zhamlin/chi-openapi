@@ -145,6 +145,30 @@ func TestContainer(t *testing.T) {
 		respStr := resp.(string)
 		MustMatch(t, respStr, expectedString)
 	})
+
+	t.Run("provide struct", func(t *testing.T) {
+		type Value struct {
+			value int
+		}
+		c := container.New()
+		expectedValue := Value{value: 1}
+		c.Provide(expectedValue)
+
+		var value Value
+		err := c.Create(&value)
+		MustMatch(t, err, nil)
+		MustMatch(t, value.value, expectedValue.value)
+
+		plan, err := c.CreatePlan(func(v Value) Value {
+			return v
+		})
+		MustMatch(t, err, nil)
+		resp, err := c.RunPlan(plan)
+		MustMatch(t, err, nil, "expected no error creating plan")
+		value = resp.(Value)
+		MustMatch(t, value.value, expectedValue.value)
+	})
+
 }
 
 func TestContainerMisc(t *testing.T) {
