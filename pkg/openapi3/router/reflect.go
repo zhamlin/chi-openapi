@@ -323,17 +323,17 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 			return nil
 		}
 
-		if field.Type.Kind() == reflect.Struct {
-			if v := field.Tag.Get("request"); v == "body" {
-				inputTypes.Add(structField{
-					Type:          field.Type,
-					fieldIndex:    idx,
-					needProvider:  true,
-					isRequestBody: true,
-				})
-				return nil
-			}
+		if v := field.Tag.Get("request"); v == "body" {
+			inputTypes.Add(structField{
+				Type:          field.Type,
+				fieldIndex:    idx,
+				needProvider:  true,
+				isRequestBody: true,
+			})
+			return nil
+		}
 
+		if field.Type.Kind() == reflect.Struct {
 			// TODO: Check to verify all fields are loadable
 			n := field.Type.NumField()
 			for i := 0; i < n; i++ {
@@ -348,7 +348,7 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 			inputTypes.Add(structField{Type: field.Type, needProvider: true})
 			return nil
 		}
-		return fmt.Errorf("cannot create field `%s (%T)` for struct: %s",
+		return fmt.Errorf("cannot create field `%s (%s)` for struct: %s",
 			field.Name, field.Type.String(), typ.String())
 	})
 	return inputTypes, err

@@ -82,21 +82,35 @@ func TestDepRouterLoadBody(t *testing.T) {
 		String string `json:"string"`
 		Number int    `json:"number"`
 	}
+	reqBody := RequestBody{String: "str", Number: -1}
 
 	h := func(w http.ResponseWriter, r *http.Request, params struct {
 		Body RequestBody `request:"body" doc:"input"`
 	}) {
-		MustMatch(t, -1, params.Body.Number)
-		MustMatch(t, "str", params.Body.String)
+		MustMatch(t, reqBody.Number, params.Body.Number)
+		MustMatch(t, reqBody.String, params.Body.String)
 	}
 
 	r := newDepRouter(t)
 	r.Get("/", h, ResponseAs[struct{ A string }]("A", http.StatusOK, ""))
 
-	reqBody := RequestBody{String: "str", Number: -1}
+	arrayHandler := func(w http.ResponseWriter, r *http.Request, params struct {
+		Body []RequestBody `request:"body" doc:"input"`
+	}) {
+		MustMatch(t, reqBody.Number, params.Body[0].Number)
+		MustMatch(t, reqBody.String, params.Body[0].String)
+	}
+	r.Get("/array", arrayHandler, ResponseAs[struct{ A string }]("A", http.StatusOK, ""))
+
 	data := MustMarshal(t, reqBody)
 	req := httptest.NewRequest(http.MethodGet, "/", bytes.NewBufferString(data))
 	resp := do(r, req)
+	MustMatch(t, resp.Code, http.StatusOK)
+
+	body := []RequestBody{reqBody}
+	data = MustMarshal(t, body)
+	req = httptest.NewRequest(http.MethodGet, "/array", bytes.NewBufferString(data))
+	resp = do(r, req)
 	MustMatch(t, resp.Code, http.StatusOK)
 
 	MustMatchAsJson(t, r.OpenAPI(), `
@@ -155,10 +169,38 @@ func TestDepRouterLoadBody(t *testing.T) {
                         }
                     }
                 }
+            },
+            "/array": {
+                "get": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/RequestBody"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "input",
+                        "required": true
+                    },
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/A"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
-
     `)
 }
 
