@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/zhamlin/chi-openapi/pkg/openapi3"
@@ -20,18 +21,20 @@ type RouteInfo struct {
 	URLParams map[string]string
 }
 
+func trimTrailingSlashes(s string) string {
+	if s == "/" {
+		return s
+	}
+	return strings.TrimSuffix(s, "/")
+}
+
 func newRouteInfo(openAPI openapi3.OpenAPI, r *http.Request) (RouteInfo, bool) {
 	ctx := chi.RouteContext(r.Context())
 	if ctx == nil {
 		return RouteInfo{}, false
 	}
 
-	routePattern := ctx.RoutePattern()
-	if routePattern == "" {
-		// RoutePattern removes any trailing slashes, so an empty
-		// string _could_ be a /
-		routePattern = "/"
-	}
+	routePattern := trimTrailingSlashes(ctx.RoutePattern())
 	item, has := openAPI.GetPath(routePattern)
 	if !has {
 		return RouteInfo{}, false
@@ -42,6 +45,10 @@ func newRouteInfo(openAPI openapi3.OpenAPI, r *http.Request) (RouteInfo, bool) {
 		return RouteInfo{}, false
 	}
 
+	params := make(map[string]string, len(ctx.URLParams.Keys))
+	for i, name := range ctx.URLParams.Keys {
+		params[name] = ctx.URLParams.Values[i]
+	}
 	info := RouteInfo{
 		Request:     r,
 		QueryValues: r.URL.Query(),
@@ -49,10 +56,7 @@ func newRouteInfo(openAPI openapi3.OpenAPI, r *http.Request) (RouteInfo, bool) {
 
 		Operation: op,
 		PathItem:  item,
-		URLParams: map[string]string{},
-	}
-	for i, name := range ctx.URLParams.Keys {
-		info.URLParams[name] = ctx.URLParams.Values[i]
+		URLParams: params,
 	}
 	return info, true
 }
