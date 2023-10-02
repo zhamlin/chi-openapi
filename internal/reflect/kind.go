@@ -26,6 +26,7 @@ var PrimitiveKind = internal.Set[reflect.Kind]{
 	reflect.Int8:    struct{}{},
 	reflect.Int16:   struct{}{},
 	reflect.Int32:   struct{}{},
+	reflect.Int64:   struct{}{},
 	reflect.Uint:    struct{}{},
 	reflect.Uint8:   struct{}{},
 	reflect.Uint16:  struct{}{},
