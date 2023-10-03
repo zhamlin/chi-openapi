@@ -617,13 +617,19 @@ func TestDepRouterNested(t *testing.T) {
 
 func TestDepRouterNoRouteInfoNeeded(t *testing.T) {
 	c := container.New()
-	type A struct{}
-	c.Provide(A{})
+	type A struct {
+		name string
+	}
+	c.Provide(A{name: "name"})
 
 	r := newDepRouter(t).WithContainer(c)
-	h := func(w http.ResponseWriter, r *http.Request, _ A) {
+	type Params struct {
+		A A
+	}
+	h := func(w http.ResponseWriter, r *http.Request, params Params) {
 		_, has := router.GetRouteInfo(r.Context())
 		MustMatch(t, has, false)
+		MustMatch(t, params.A.name, "name")
 		w.WriteHeader(http.StatusLocked)
 	}
 	r.Get("/", h)
@@ -631,6 +637,148 @@ func TestDepRouterNoRouteInfoNeeded(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	resp := do(r, req)
 	MustMatch(t, resp.Code, http.StatusLocked)
+}
+
+func TestDepRouterReusedRequestBody(t *testing.T) {
+	type CreateParams struct {
+		Value string
+	}
+
+	type CreateResponse struct {
+		Name string
+	}
+	type FooCreateRequest struct {
+		Body CreateParams `request:"body" doc:"input"`
+	}
+	fooCreate := func(r FooCreateRequest) (CreateResponse, error) {
+		return CreateResponse{Name: "test"}, nil
+	}
+
+	type BarCreateRequest struct {
+		Body CreateParams `request:"body" doc:"input"`
+	}
+	barCreate := func(r BarCreateRequest) (CreateResponse, error) {
+		return CreateResponse{Name: "test"}, nil
+	}
+	otherCreate := func(r BarCreateRequest) (CreateResponse, error) {
+		return CreateResponse{Name: "test"}, nil
+	}
+
+	r := newDepRouter(t)
+	r.Post("/foo", fooCreate, Response[CreateResponse](http.StatusCreated, "foos"))
+	r.Post("/bar", barCreate, Response[CreateResponse](http.StatusCreated, "bars"))
+	r.Post("/other", otherCreate, Response[CreateResponse](http.StatusCreated, "other"))
+
+	MustMatchAsJson(t, r.OpenAPI(), `{
+        "components": {
+            "schemas": {
+                "CreateParams": {
+                    "properties": {
+                        "Value": {
+                            "type": "string"
+                        }
+                    },
+                    "type": "object"
+                },
+                "CreateResponse": {
+                    "properties": {
+                        "Name": {
+                            "type": "string"
+                        }
+                    },
+                    "type": "object"
+                }
+            }
+        },
+        "info": {
+            "title": "",
+            "version": ""
+        },
+        "openapi": "3.1.0",
+        "paths": {
+            "/bar": {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateParams"
+                                }
+                            }
+                        },
+                        "description": "input",
+                        "required": true
+                    },
+                    "responses": {
+                        "201": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/CreateResponse"
+                                    }
+                                }
+                            },
+                            "description": "bars"
+                        }
+                    }
+                }
+            },
+            "/foo": {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateParams"
+                                }
+                            }
+                        },
+                        "description": "input",
+                        "required": true
+                    },
+                    "responses": {
+                        "201": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/CreateResponse"
+                                    }
+                                }
+                            },
+                            "description": "foos"
+                        }
+                    }
+                }
+            },
+            "/other": {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateParams"
+                                }
+                            }
+                        },
+                        "description": "input",
+                        "required": true
+                    },
+                    "responses": {
+                        "201": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/CreateResponse"
+                                    }
+                                }
+                            },
+                            "description": "other"
+                        }
+                    }
+                }
+            }
+        }
+    }`)
 }
 
 func BenchmarkDepRouter(b *testing.B) {

@@ -133,8 +133,10 @@ func createTypeFromQueryParam(
 		}
 		return typValue, nil
 	}
-	// TODO: unsupported combo error
-	panic(fmt.Sprintf("TODO:unsupported combo error for query param and location: %v %v", openapi3.ParameterStyle(p.Style) == openapi3.ParameterStyleNone, typKind))
+
+	err := fmt.Errorf("unsupported combo error for query param and location: %v %v",
+		p.Style, typKind)
+	return reflect.Value{}, err
 }
 
 func createTypeFromPathParam(typ reflect.Type, p openapi3.Parameter, info RouteInfo) (reflect.Value, error) {
@@ -142,26 +144,29 @@ func createTypeFromPathParam(typ reflect.Type, p openapi3.Parameter, info RouteI
 	if has {
 		urlValue, err := stringToValue(urlParam, typ)
 		if err != nil {
-			return reflect.Value{}, nil
+			return reflect.Value{}, fmt.Errorf("stringToValue: %w", err)
 		}
 		return urlValue, nil
 	}
-	return reflect.Value{}, nil
+	return reflect.Value{}, fmt.Errorf("url param not found: %s (%s)", p.Name, typ.String())
 }
 
 func createTypeFromParam(typ reflect.Type, p openapi3.Parameter, info RouteInfo) (reflect.Value, error) {
-	schema, has := info.OpenAPI.GetParameterSchema(p)
-	if !has {
-		return reflect.Value{}, fmt.Errorf("could not find schema for parameter: %v", p.Name)
+	if p.Schema.Ref != nil {
+		// TODO: look up ref in RouteInfo
+		return reflect.Value{}, fmt.Errorf("schema ref not supported")
 	}
+	schema := openapi3.Schema{Schema: p.Schema.Spec}
 
 	switch openapi3.ParameterLocation(p.In) {
 	case openapi3.ParameterLocationQuery:
+
 		return createTypeFromQueryParam(typ, p, info, schema)
 	case openapi3.ParameterLocationPath:
 		return createTypeFromPathParam(typ, p, info)
+	default:
+		return reflect.Value{}, fmt.Errorf("param location not supported: %s", p.In)
 	}
-	return reflect.Value{}, nil
 }
 
 func getParamAsString(info RouteInfo, name string, loc openapi3.ParameterLocation) ([]string, bool) {
@@ -267,24 +272,6 @@ func stringToValue(str string, typ reflect.Type) (reflect.Value, error) {
 	return noValue, nil
 }
 
-func tryLoadParam(info RouteInfo, field reflect.StructField) (reflect.Value, error) {
-	if paramLocation, name := openapi3.GetParameterLocationTag(field); paramLocation != "" {
-		param, has := info.OpenAPI.GetParameter(name, info.Operation)
-		if !has {
-			panic("does not have param")
-		}
-		value, err := createTypeFromParam(field.Type, param, info)
-		if err != nil {
-			return reflect.Value{}, err
-		}
-		if !value.IsValid() {
-			return reflect.Value{}, fmt.Errorf("unsupported type for param: %s", field.Type.String())
-		}
-		return value, nil
-	}
-	return reflect.Value{}, nil
-}
-
 type structField struct {
 	reflect.Type
 	// track the structField via index vs reflect.StructField
@@ -302,7 +289,27 @@ type structField struct {
 //   - else err
 func getStructFields(typ reflect.Type, c container.Container) (internal.Set[structField], error) {
 	inputTypes := internal.NewSet[structField]()
+
+	retErr := func(err error) error {
+		if c.HasType(typ) {
+			// if the container already knows how to create the type
+			// don't return any errors, only the inputTypes are needed
+			return nil
+		}
+		return err
+	}
+
 	err := reflectUtil.WalkStructWithIndex(typ, func(idx int, field reflect.StructField) error {
+		if v := field.Tag.Get("request"); v == "body" {
+			inputTypes.Add(structField{
+				Type:          field.Type,
+				fieldIndex:    idx,
+				needProvider:  true,
+				isRequestBody: true,
+			})
+			return nil
+		}
+
 		if isHttpType(field.Type) {
 			// these types will be passed to the container via the args
 			// so always add them
@@ -323,33 +330,23 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 			return nil
 		}
 
-		if v := field.Tag.Get("request"); v == "body" {
-			inputTypes.Add(structField{
-				Type:          field.Type,
-				fieldIndex:    idx,
-				needProvider:  true,
-				isRequestBody: true,
-			})
-			return nil
-		}
-
 		if field.Type.Kind() == reflect.Struct {
 			// TODO: Check to verify all fields are loadable
 			n := field.Type.NumField()
 			for i := 0; i < n; i++ {
 				f := field.Type.Field(i)
 				if !f.IsExported() {
-					return fmt.Errorf(
+					return retErr(fmt.Errorf(
 						"can not create the type: %s: field %s: unexported field: %s",
-						field.Type.String(), f.Type.String(), f.Name)
+						field.Type.String(), f.Type.String(), f.Name))
 				}
 			}
 
 			inputTypes.Add(structField{Type: field.Type, needProvider: true})
 			return nil
 		}
-		return fmt.Errorf("cannot create field `%s (%s)` for struct: %s",
-			field.Name, field.Type.String(), typ.String())
+		return retErr(fmt.Errorf("cannot create field `%s (%s)` for struct: %s",
+			field.Name, field.Type.String(), typ.String()))
 	})
 	return inputTypes, err
 }
@@ -362,8 +359,7 @@ func createProviderForJsonRequestBody(
 ) any {
 	fnType := reflect.FuncOf([]reflect.Type{reqType}, []reflect.Type{t, reflectUtil.ErrType}, false)
 	dynamicFunc := func(in []reflect.Value) []reflect.Value {
-		// If this type check fails panic. If this function does not
-		// have a *http.Request at this point something has gone wrong
+		// if this type check fails panic
 		req := in[0].Interface().(*http.Request)
 		obj := reflect.New(t)
 		if err := loader(req, obj.Interface()); err != nil {
@@ -380,99 +376,128 @@ func createProviderForType(
 	typ reflect.Type,
 	c container.Container,
 	loader RequestBodyLoader,
-) (*reflect.StructField, error) {
+	fnInfo *fnInfo,
+) error {
 	fields, err := getStructFields(typ, c)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// ensure a *http.Request is available
 	fields.Add(structField{Type: reqType})
 
-	var requestBody *reflect.StructField
 	inputTypes := []reflect.Type{}
 	for field := range fields {
 		if field.needProvider && field.isRequestBody {
 			structField := typ.Field(field.fieldIndex)
-			requestBody = &structField
-			fn := createProviderForJsonRequestBody(field.Type, loader)
-			c.Provide(fn)
-		} else if field.needProvider {
-			f, err := createProviderForType(field.Type, c, loader)
-			if err != nil {
-				return nil, err
+			fnInfo.requestBody = structField
+			if !c.HasType(field.Type) {
+				fn := createProviderForJsonRequestBody(field.Type, loader)
+				c.Provide(fn)
 			}
-			requestBody = f
+		} else if field.needProvider {
+			err := createProviderForType(field.Type, c, loader, fnInfo)
+			if err != nil {
+				return err
+			}
 		}
 		inputTypes = append(inputTypes, field.Type)
 	}
 
-	fn := newStructGenerator(typ, inputTypes)
-	c.Provide(fn)
-	return requestBody, nil
+	if !c.HasType(typ) {
+		fn, err := newStructGenerator(typ, inputTypes, fnInfo)
+		if err != nil {
+			return err
+		}
+		c.Provide(fn)
+	}
+	return nil
 }
 
 // newStructGenerator takes a struct type and a set of the inputs it expects
 // from a container to set its fields. A new function `fn(inputs...) (typ, error)` is returned
 // which will create a new struct and set each field via:
-// - tryLoadParam if the field has a parameter tag
+// - createTypeFromParam if the field has a parameter tag
 // - from the inputs of the function
-func newStructGenerator(typ reflect.Type, inputs []reflect.Type) any {
+func newStructGenerator(typ reflect.Type, inputs []reflect.Type, fnInfo *fnInfo) (any, error) {
 	// create a map of types to the index in the input array
 	typesToIndex := make(map[reflect.Type]int, len(inputs))
 	for i, item := range inputs {
 		typesToIndex[item] = i
 	}
 
-	getType := func(in []reflect.Value, t reflect.Type) (reflect.Value, error) {
-		idx, has := typesToIndex[t]
-		if !has {
-			return reflect.Value{}, fmt.Errorf("%s does not exist in the type map", t.String())
-		}
-		return in[idx], nil
+	type Value struct {
+		fieldIdx int
+		inputIdx int
+		typ      reflect.Type
+	}
+	values := []Value{}
+
+	type Param struct {
+		fieldIdx int
+		typ      reflect.Type
+		param    openapi3.Parameter
+	}
+	params := []Param{}
+
+	// check to see if every field on the struct can be created
+	err := reflectUtil.WalkStructWithIndex(typ,
+		func(idx int, field reflect.StructField) error {
+			if location, name := openapi3.GetParameterLocationTag(field); location != "" {
+				for _, param := range fnInfo.params {
+					if param.Name == name && param.In == string(location) {
+						params = append(params, Param{
+							fieldIdx: idx,
+							typ:      field.Type,
+							param:    param,
+						})
+						return nil
+					}
+				}
+				return fmt.Errorf("could not load param: %s: in: %s", name, location)
+			}
+
+			inputIdx, has := typesToIndex[field.Type]
+			if !has {
+				// TODO: improve error message
+				return fmt.Errorf("non param input not in the input array")
+			}
+			values = append(values, Value{
+				fieldIdx: idx,
+				inputIdx: inputIdx,
+				typ:      field.Type,
+			})
+			return nil
+		})
+	if err != nil {
+		return nil, err
 	}
 
 	fnType := reflect.FuncOf(inputs, []reflect.Type{typ, reflectUtil.ErrType}, false)
 	dynamicFunc := func(in []reflect.Value) []reflect.Value {
-		typObj := reflect.New(typ).Elem()
-		err := func() error {
-			reqVal, err := getType(in, reqType)
-			if err != nil {
-				return err
-			}
-			// If this type check fails panic. If this function does not
-			// have a *http.Request at this point something has gone wrong as getType
-			// should have checked for it
-			req := reqVal.Interface().(*http.Request)
-			routeInfo, has := GetRouteInfo(req.Context())
-			if !has {
-				return fmt.Errorf("missing required openapi info in context")
-			}
-			return reflectUtil.WalkStructWithIndex(typ,
-				func(idx int, field reflect.StructField) error {
-					paramValue, err := tryLoadParam(routeInfo, field)
-					if err != nil {
-						return err
-					}
-
-					if !paramValue.IsValid() {
-						// not a param so get it from the inputs
-						val, err := getType(in, field.Type)
-						if err != nil {
-							return err
-						}
-						paramValue = val
-					}
-					typObj.Field(idx).Set(paramValue)
-					return nil
-				})
-		}()
-		if err != nil {
+		// if this function does not have a *http.Request panic
+		req := in[typesToIndex[reqType]].Interface().(*http.Request)
+		routeInfo, has := GetRouteInfo(req.Context())
+		if !has && len(params) > 0 {
+			err := fmt.Errorf("missing required openapi info in context")
 			return []reflect.Value{reflect.Zero(typ), reflect.ValueOf(err)}
+		}
+
+		typObj := reflect.New(typ).Elem()
+		for _, p := range params {
+			paramValue, err := createTypeFromParam(p.typ, p.param, routeInfo)
+			if err != nil {
+				return []reflect.Value{reflect.Zero(typ), reflect.ValueOf(err)}
+			}
+			typObj.Field(p.fieldIdx).Set(paramValue)
+		}
+
+		for _, v := range values {
+			typObj.Field(v.fieldIdx).Set(in[v.inputIdx])
 		}
 		return []reflect.Value{typObj, reflect.Zero(reflectUtil.ErrType)}
 	}
 	fn := reflect.MakeFunc(fnType, dynamicFunc)
-	return fn.Interface()
+	return fn.Interface(), nil
 }
 
 var (
@@ -523,12 +548,7 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 			// to c.Run() later so skip them
 			continue
 		}
-		if router.container.HasType(p) {
-			// container already knows how to create this type
-			continue
-		}
 		if p.Kind() != reflect.Struct {
-			// this type is not in the container, nor is a struct.
 			// ignore this and let container.CreatePlan give a better error
 			continue
 		}
@@ -541,12 +561,9 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 		}
 		fnInfo.params = append(fnInfo.params, params...)
 
-		f, err := createProviderForType(p, router.container, router.requestBodyLoader)
+		err = createProviderForType(p, router.container, router.requestBodyLoader, &fnInfo)
 		if err != nil {
 			return nil, fnInfo, err
-		}
-		if f != nil {
-			fnInfo.requestBody = *f
 		}
 	}
 

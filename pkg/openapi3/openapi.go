@@ -45,20 +45,6 @@ type Schema struct {
 	*spec.Schema
 }
 
-func (o OpenAPI) GetParameterSchema(p Parameter) (Schema, bool) {
-	// TODO: move to parameter, include refe to openapi spec in param?
-	if p.Schema == nil {
-		return Schema{}, false
-	}
-
-	schema := p.Schema.Spec
-	if ref := p.Schema.Ref; ref != nil {
-		panic("TODO: look up param schema ref")
-		// TODO: look up schema
-	}
-	return Schema{Schema: schema}, schema != nil
-}
-
 func (o OpenAPI) GetComponents() Components {
 	if o.Components == nil {
 		o.Components = spec.NewComponents()
