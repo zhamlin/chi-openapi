@@ -169,6 +169,34 @@ func TestContainer(t *testing.T) {
 		MustMatch(t, value.value, expectedValue.value)
 	})
 
+	t.Run("provide value that already exists in graph", func(t *testing.T) {
+		type A struct{ name string }
+		type C struct {
+			A A
+		}
+
+		c := container.New()
+		c.Provide(func(a A) C {
+			return C{A: a}
+		})
+		c.Provide(A{name: "A"})
+
+		var value C
+		err := c.Create(&value)
+		MustMatch(t, err, nil)
+		MustMatch(t, value.A.name, "A")
+
+		plan, err := c.CreatePlan(func(c C) C {
+			return c
+		})
+		MustMatch(t, err, nil)
+		resp, err := c.RunPlan(plan)
+
+		MustMatch(t, err, nil, "expected no error creating plan")
+		value = resp.(C)
+		MustMatch(t, value.A.name, "A")
+	})
+
 }
 
 func TestContainerMisc(t *testing.T) {

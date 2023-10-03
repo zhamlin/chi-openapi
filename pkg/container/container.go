@@ -220,10 +220,14 @@ func (c container) provideObj(obj reflect.Value) {
 	node := newProviderNodeFromObj(obj)
 	providerIdx := c.graph.Add(node)
 
-	// add non provider node for this type
 	t := obj.Type()
-	node = newNodeFromType(t)
-	idx := c.graph.Add(node)
+	idx, has := c.typeIndexes[t]
+	if !has {
+		// add non provider node for this type
+		node = newNodeFromType(t)
+		idx = c.graph.Add(node)
+	}
+
 	if err := c.graph.AddEdges(providerIdx, idx); err != nil {
 		c.handleErr(err)
 	}
