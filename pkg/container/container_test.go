@@ -1,6 +1,7 @@
 package container_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -199,46 +200,6 @@ func TestContainer(t *testing.T) {
 
 }
 
-func TestContainerMisc(t *testing.T) {
-	type A struct{}
-	a := func() A {
-		return A{}
-	}
-
-	type B struct{}
-	b := func() B {
-		return B{}
-	}
-
-	type C struct{}
-	cFn := func(a A, b B) C {
-		return C{}
-	}
-
-	type D struct {
-		Name string
-	}
-
-	d := func(c C) D {
-		return D{
-			Name: "From C",
-		}
-	}
-
-	c := container.New()
-
-	c.Provide(a)
-	c.Provide(b)
-	c.Provide(cFn)
-	c.Provide(d)
-
-	MustMatch(t, c.CheckForCycles(), nil, "CheckForCycles failed")
-	// TODO
-	// dObj, err := container.Create[D](c)
-	// MustMatch(t, err, nil)
-	// MustMatch(t, dObj.Name, "From C")
-}
-
 func TestContainerHooks(t *testing.T) {
 	c := container.New()
 	type A struct {
@@ -379,6 +340,39 @@ func TestContainerPlan(t *testing.T) {
 	})
 }
 
+func TestContainerCreatePlan(t *testing.T) {
+	type A struct{}
+	type B struct{}
+	type C struct{}
+
+	c := container.New()
+	callCount := 0
+	c.Provide(func() context.Context {
+		callCount += 1
+		return context.TODO()
+	})
+	c.Provide(func(ctx context.Context) A {
+		return A{}
+	})
+	c.Provide(func(ctx context.Context) B {
+		return B{}
+	})
+	c.Provide(func(_ A, _ B) C {
+		return C{}
+	})
+
+	t.Run("funcs are only called once", func(t *testing.T) {
+		plan, err := c.CreatePlan(func(c C) {})
+		MustMatch(t, err, nil)
+		MustMatch(t, callCount, 0)
+
+		_, err = c.RunPlan(plan)
+		MustMatch(t, err, nil)
+		MustMatch(t, callCount, 1)
+	})
+
+}
+
 func TestContainerPlanConcurrent(t *testing.T) {
 	type A struct {
 		N int
@@ -491,32 +485,46 @@ func TestContainerPlanOrder(t *testing.T) {
 	MustMatch(t, res, Tree{})
 }
 
+func createProvider[In any, Out any]() func(In) Out {
+	return func(_ In) Out {
+		var obj Out
+		return obj
+	}
+}
+
 func BenchmarkContainerRun(b *testing.B) {
 	type A struct{}
+	type B struct{}
+	type C struct{}
+	type D struct{}
+	type E struct{}
+	type F struct{}
+	type G struct{}
+	type H struct{}
+	type I struct{}
+	type J struct{}
+	type K struct{}
+	type L struct{}
+	type M struct{}
+	type N struct{}
 	a := func() A {
 		return A{}
 	}
-	type B struct{}
-	bFn := func(A) B {
-		return B{}
-	}
-	type C struct{}
-	cFn := func(B) C {
-		return C{}
-	}
-	type D struct{}
-	d := func(C) D {
-		return D{}
-	}
-	type E struct{}
-	e := func(D) E {
-		return E{}
-	}
-	type F struct{}
-	f := func(E) F {
-		return F{}
-	}
-	endFn := func(F) string {
+
+	bFn := createProvider[A, B]()
+	cFn := createProvider[B, C]()
+	d := createProvider[C, D]()
+	e := createProvider[D, E]()
+	f := createProvider[E, F]()
+	g := createProvider[F, G]()
+	h := createProvider[G, H]()
+	i := createProvider[H, I]()
+	j := createProvider[I, J]()
+	k := createProvider[J, K]()
+	l := createProvider[K, L]()
+	m := createProvider[L, M]()
+	n := createProvider[M, N]()
+	endFn := func(N) string {
 		return "str"
 	}
 
@@ -527,16 +535,32 @@ func BenchmarkContainerRun(b *testing.B) {
 	c.Provide(d)
 	c.Provide(e)
 	c.Provide(f)
+	c.Provide(g)
+	c.Provide(h)
+	c.Provide(i)
+	c.Provide(j)
+	c.Provide(k)
+	c.Provide(l)
+	c.Provide(m)
+	c.Provide(n)
 
 	b.Run("no container", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for ij := 0; ij < b.N; ij++ {
 			a := a()
 			b := bFn(a)
 			c := cFn(b)
 			d := d(c)
 			e := e(d)
 			f := f(e)
-			endFn(f)
+			g := g(f)
+			h := h(g)
+			i := i(h)
+			j := j(i)
+			k := k(j)
+			l := l(k)
+			m := m(l)
+			n := n(m)
+			endFn(n)
 		}
 	})
 
@@ -560,10 +584,12 @@ func BenchmarkContainerRun(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	b.Run("plan", func(b *testing.B) {
+	b.Run(fmt.Sprintf("plan(size %d)", plan.Size()), func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			//nolint
-			c.RunPlan(plan)
+			_, err := c.RunPlan(plan)
+			if err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
 
@@ -571,7 +597,7 @@ func BenchmarkContainerRun(b *testing.B) {
 	for i := 0; i < len(args); i++ {
 		args[i] = i
 	}
-	b.Run("plan large(100) args", func(b *testing.B) {
+	b.Run("plan with 100 args", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			//nolint
 			c.RunPlan(plan, args...)

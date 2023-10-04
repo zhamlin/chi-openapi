@@ -226,12 +226,12 @@ func (c container) provideObj(obj reflect.Value) {
 		// add non provider node for this type
 		node = newNodeFromType(t)
 		idx = c.graph.Add(node)
+		c.typeIndexes[t] = idx
 	}
 
 	if err := c.graph.AddEdges(providerIdx, idx); err != nil {
 		c.handleErr(err)
 	}
-	c.typeIndexes[t] = idx
 }
 
 // provideFn will add the fn to the containers graph as a provider node
@@ -362,13 +362,17 @@ func getRespAndError(outputs []reflect.Value) (any, error) {
 }
 
 type Plan struct {
-	providers []*nodeTypeProvider
-	fn        reflect.Value
-	fnParams  []reflect.Type
+	providerIndexes []int
+	fn              reflect.Value
+	fnParams        []reflect.Type
 
 	// Track the max array size needed to contain all of the functions params.
 	// This allows one allocation for all of the function inputs once per plan run
 	maxParamCount int
+}
+
+func (p Plan) Size() int {
+	return len(p.providerIndexes)
 }
 
 // CreatePlan walks the fn inputs ensuring it has all the needed
@@ -384,18 +388,18 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 
 	fnParams := reflectUtil.GetFuncParams(fnType)
 	plan := Plan{
-		providers:     []*nodeTypeProvider{},
-		fn:            reflect.ValueOf(fn),
-		fnParams:      fnParams,
-		maxParamCount: len(fnParams),
+		providerIndexes: []int{},
+		fn:              reflect.ValueOf(fn),
+		fnParams:        fnParams,
+		maxParamCount:   len(fnParams),
 	}
 
 	neededTypes := internal.NewSet[reflect.Type]()
 	// from the provided index recursively get the indexes of all
 	// the provider nodes required to create it.
-	var visit func(idx int) []*nodeTypeProvider
-	visit = func(idx int) []*nodeTypeProvider {
-		result := []*nodeTypeProvider{}
+	var visit func(idx int) []int
+	visit = func(idx int) []int {
+		indexes := []int{}
 		for edgeIndex := range c.graph.EdgesToFrom[idx] {
 			n, err := c.graph.Get(edgeIndex)
 			if err != nil {
@@ -410,13 +414,13 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 						plan.maxParamCount = c
 					}
 				}
-				result = append(result, &provider)
+				indexes = append(indexes, edgeIndex)
 			} else {
 				neededTypes.Add(n.refelctType)
 			}
-			result = append(result, visit(edgeIndex)...)
+			indexes = append(indexes, visit(edgeIndex)...)
 		}
-		return result
+		return indexes
 	}
 
 	shouldIgnore := func(t reflect.Type) bool {
@@ -444,7 +448,8 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 		if !canCreateType(pType, idx, has) {
 			return plan, fmt.Errorf("container can not create the type: %s", pType.String())
 		}
-		plan.providers = append(plan.providers, visit(idx)...)
+		indexes := visit(idx)
+		plan.providerIndexes = append(plan.providerIndexes, indexes...)
 	}
 
 	// verify the needed types can be created
@@ -459,10 +464,10 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 	}
 
 	// reverse array so nodes with no deps come first
-	internal.Reverse(plan.providers)
+	internal.Reverse(plan.providerIndexes)
 
 	// remove duplicates to avoid extra work
-	plan.providers = internal.Unique(plan.providers)
+	plan.providerIndexes = internal.Unique(plan.providerIndexes)
 	return plan, nil
 }
 
@@ -482,7 +487,7 @@ func (c container) runPlanWithContext(ctx context, plan Plan) (any, error) {
 		for i, pType := range params {
 			param, has := ctx.Get(pType)
 			if !has {
-				// this _shouldn't_ happen unless this type was ignored during
+				// this shouldn't happen unless this type was ignored during
 				// plan creation
 				return nil, fmt.Errorf("context did not have %s", pType.String())
 			}
@@ -491,7 +496,13 @@ func (c container) runPlanWithContext(ctx context, plan Plan) (any, error) {
 		return fn.Call(inputs[:len(params)]), nil
 	}
 
-	for _, provider := range plan.providers {
+	for _, providerIdx := range plan.providerIndexes {
+		n, err := c.graph.Get(providerIdx)
+		if err != nil {
+			return nil, err
+		}
+
+		provider := n.typ.(nodeTypeProvider)
 		output := []reflect.Value{provider.value}
 		if provider.isFunc() {
 			var err error
