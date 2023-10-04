@@ -523,6 +523,7 @@ func TestRouterRouteDefaultResponses(t *testing.T) {
 		DefaultResponse[struct{ B string }](""),
 	)
 	router.Get("/other", h, Response[None](http.StatusOK, ""))
+	router.Get("/noresponse", h)
 
 	MustMatchAsJson(t, router.OpenAPI(), `
     {
@@ -566,6 +567,18 @@ func TestRouterRouteDefaultResponses(t *testing.T) {
                 "get": {
                     "responses": {
                         "200": {},
+                        "404": {
+                            "$ref": "#/components/responses/404"
+                        },
+                        "default": {
+                            "$ref": "#/components/responses/default"
+                        }
+                    }
+                }
+            },
+            "/noresponse": {
+                "get": {
+                    "responses": {
                         "404": {
                             "$ref": "#/components/responses/404"
                         },

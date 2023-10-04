@@ -237,6 +237,15 @@ func (o *Operation) AddResponse(code int, schema Response) {
 	o.Responses.Spec.Response[statusCode] = spec.NewRefOrSpec(nil, spec.NewExtendable(&schema.Response))
 }
 
+func (o *Operation) HasResponse(code int) bool {
+	if o.Responses == nil {
+		return false
+	}
+	statusCode := fmt.Sprintf("%d", code)
+	_, has := o.Responses.Spec.Response[statusCode]
+	return has
+}
+
 func (o *Operation) AddResponseRef(code int, ref string) {
 	if o.Responses == nil {
 		o.Responses = spec.NewResponses()

@@ -166,9 +166,7 @@ func (r *Router) setDefaultStatusResponse(code string, desc string, obj any, con
 // setDefaultResponses ensures any default responses are set on the operation.
 func (r *Router) setDefaultResponses(op openapi3.Operation) {
 	for statusCode, ref := range r.defaultStatusRoutes {
-		code := fmt.Sprintf("%d", statusCode)
-		_, has := op.Responses.Spec.Response[code]
-		if !has {
+		if !op.HasResponse(statusCode) {
 			op.AddResponseRef(statusCode, ref)
 		}
 	}
