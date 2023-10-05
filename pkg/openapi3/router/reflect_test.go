@@ -308,7 +308,7 @@ func TestCreateTypeFromParam(t *testing.T) {
 		},
 	}
 
-	r := NewRouter("", "")
+	r := NewRouter(Config{})
 	r.Get("/", nil)
 	r.Get("/color/{this-value-is-not-used}", nil, Params(struct {
 		// because the router isn't being used, the path route doesn't matter above.

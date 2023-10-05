@@ -12,7 +12,7 @@ import (
 )
 
 func TestGetRouteInfo(t *testing.T) {
-	r := NewRouter("", "")
+	r := NewRouter(Config{})
 	r.Get("/", nil,
 		Summary("the operation"),
 		Params(struct{}{}),

@@ -20,12 +20,11 @@ import (
 )
 
 func newDepRouter(t Tester) *router.DepRouter {
-	router := router.NewDepRouter("", "", router.DepConfig{
+	router := router.NewDepRouter(router.DepConfig{
 		ResponseHandler: func(_ http.ResponseWriter, _ *http.Request, _ any, err error) {
 			MustMatch(t, err, nil, "request handler returned an error")
 		},
 	})
-	router.PanicOnError(true)
 	return router
 }
 
@@ -619,7 +618,8 @@ func TestDepRouterNoRouteInfoNeeded(t *testing.T) {
 	}
 	c.Provide(A{name: "name"})
 
-	r := newDepRouter(t).WithContainer(c)
+	r := newDepRouter(t)
+	r.Container = c
 	type Params struct {
 		A A
 	}

@@ -15,8 +15,7 @@ import (
 )
 
 func newRouter() *router.Router {
-	router := router.NewRouter("", "")
-	router.PanicOnError(true)
+	router := router.NewRouter(router.Config{})
 	return router
 }
 
@@ -421,12 +420,16 @@ func TestRouterErrors(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}
 
-	router := newRouter()
-	router.PanicOnError(false)
+	errs := []error{}
+	router := router.NewRouter(router.Config{
+		ErrorSink: func(err error) {
+			errs = append(errs, err)
+		},
+	})
 	router.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
 	router.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
 
-	MustMatch(t, len(router.Errors()), 1,
+	MustMatch(t, len(errs), 1,
 		"expected one error; /foo and /bar try to use the same component name")
 }
 
@@ -435,22 +438,28 @@ func TestSubRouterErrors(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}
 
-	rootRouter := newRouter()
-	rootRouter.PanicOnError(false)
+	rootRouterErrs := []error{}
+	rootRouter := router.NewRouter(router.Config{
+		ErrorSink: func(err error) {
+			rootRouterErrs = append(rootRouterErrs, err)
+		},
+	})
 
-	router := newRouter()
-	router.PanicOnError(false)
+	routerErrs := []error{}
+	router := router.NewRouter(router.Config{
+		ErrorSink: func(err error) {
+			routerErrs = append(routerErrs, err)
+		},
+	})
 	router.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
 	router.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
-	MustMatch(t, len(router.Errors()), 1, "expected one error")
+	MustMatch(t, len(routerErrs), 1, "expected one error")
 
-	MustMatch(t, len(rootRouter.Errors()), 0,
+	MustMatch(t, len(rootRouterErrs), 0,
 		"expected no errors on the root router before moutn")
 	rootRouter.Mount("/v1", router)
-	MustMatch(t, len(rootRouter.Errors()), 1,
-		"expected one error; picked up from the mounted router")
 
-	err := rootRouter.Errors()[0].Error()
+	err := routerErrs[0].Error()
 	if !strings.Contains(err, "components: B already exists in the schema") {
 		t.Fatalf("expected components error, got: %s", err)
 	}
@@ -461,19 +470,28 @@ func TestRouterMountComponentErrors(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}
 
-	rootRouter := newRouter()
-	rootRouter.PanicOnError(false)
+	rootRouterErrs := []error{}
+	rootRouter := router.NewRouter(router.Config{
+		ErrorSink: func(err error) {
+			rootRouterErrs = append(rootRouterErrs, err)
+		},
+	})
 
-	router := newRouter()
-	router.PanicOnError(false)
+	routerErrs := []error{}
+	router := router.NewRouter(router.Config{
+		ErrorSink: func(err error) {
+			routerErrs = append(routerErrs, err)
+		},
+	})
+
 	router.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
-	MustMatch(t, len(router.Errors()), 0, "expected no errors")
+	MustMatch(t, len(routerErrs), 0, "expected no errors")
 
 	router.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
-	MustMatch(t, len(rootRouter.Errors()), 0, "expected no errors")
+	MustMatch(t, len(rootRouterErrs), 0, "expected no errors")
 
 	rootRouter.Mount("/v1", router)
-	MustMatch(t, len(rootRouter.Errors()), 1,
+	MustMatch(t, len(routerErrs), 1,
 		"expected one error; both routers have a component named `B`")
 }
 
@@ -482,23 +500,31 @@ func TestRouterMountPathErrors(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}
 
-	rootRouter := newRouter()
-	rootRouter.PanicOnError(false)
+	rootRouterErrs := []error{}
+	rootRouter := router.NewRouter(router.Config{
+		ErrorSink: func(err error) {
+			rootRouterErrs = append(rootRouterErrs, err)
+		},
+	})
 
-	router := newRouter()
-	router.PanicOnError(false)
+	routerErrs := []error{}
+	router := router.NewRouter(router.Config{
+		ErrorSink: func(err error) {
+			routerErrs = append(routerErrs, err)
+		},
+	})
 	router.Get("/bar", h, ResponseAs[struct{ A string }]("A", http.StatusOK, ""))
-	MustMatch(t, len(router.Errors()), 0, "expected no errors")
+	MustMatch(t, len(routerErrs), 0, "expected no errors")
 
 	rootRouter.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
-	MustMatch(t, len(rootRouter.Errors()), 0, "expected no errors")
+	MustMatch(t, len(rootRouterErrs), 0, "expected no errors")
 
 	rootRouter.Mount("/", router)
-	MustMatch(t, len(rootRouter.Errors()), 1,
+	MustMatch(t, len(rootRouterErrs), 1,
 		"expected one error; both routers have /bar path",
 	)
 
-	err := rootRouter.Errors()[0].Error()
+	err := rootRouterErrs[0].Error()
 	if !strings.Contains(err, "paths: key already exists") {
 		t.Fatalf("expected path error, got: %s", err)
 	}

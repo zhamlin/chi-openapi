@@ -30,25 +30,57 @@ func newChiRouter() chi.Router {
 	return chi.NewRouter()
 }
 
-func NewRouter(title, version string) *Router {
-	spec := openapi3.NewOpenAPI(title)
-	spec.Info.Spec.Version = version
+type Config struct {
+	Title              string
+	Version            string
+	DefaultContentType string
 
-	schemer := jsonschema.NewSchemer()
-	schemer.RefPath = "#/components/schemas/"
-	schemer.UseRefs = true
+	AddRouteInfo       bool
+	Schemer            *jsonschema.Schemer
+	OperationIDGrabber func(any) string
+	ErrorSink          func(error)
+}
+
+func (c *Config) WithSchemer(schemer jsonschema.Schemer) *Config {
+	c.Schemer = &schemer
+	return c
+}
+
+func NewRouter(cfg Config) *Router {
+	spec := openapi3.NewOpenAPI(cfg.Title)
+	spec.Info.Spec.Version = cfg.Version
+
+	if cfg.DefaultContentType == "" {
+		cfg.DefaultContentType = openapi3.JsonContentType
+	}
+
+	if cfg.ErrorSink == nil {
+		cfg.ErrorSink = func(e error) {
+			panic(e)
+		}
+	}
+
+	if cfg.OperationIDGrabber == nil {
+		cfg.OperationIDGrabber = getPublicFunctionName
+	}
+
+	if cfg.Schemer == nil {
+		schemer := jsonschema.NewSchemer()
+		schemer.RefPath = "#/components/schemas/"
+		schemer.UseRefs = true
+		cfg.Schemer = &schemer
+	}
 
 	return &Router{
-		spec:    spec,
-		schemer: schemer,
-		mux:     newChiRouter(),
-
+		spec:                spec,
+		mux:                 newChiRouter(),
 		defaultStatusRoutes: map[int]string{},
 		defaultRouteRef:     "",
-		defaultContentType:  openapi3.JsonContentType,
-
-		panicOnError: false,
-		errors:       []error{},
+		schemer:             *cfg.Schemer,
+		defaultContentType:  cfg.DefaultContentType,
+		operationIDGrabber:  cfg.OperationIDGrabber,
+		errorSink:           cfg.ErrorSink,
+		addRouteInfo:        cfg.AddRouteInfo,
 	}
 }
 
@@ -67,20 +99,10 @@ type Router struct {
 
 	defaultContentType string
 
-	// used to track errors if panicOnError is false
-	errors []error
+	operationIDGrabber func(any) string
+	errorSink          func(error)
 
-	// TODO: move to config
-	panicOnError bool
-
-	// TODO: move to config
-	setOperationID bool
-
-	setRouteInfo bool
-}
-
-func (r Router) Errors() []error {
-	return r.errors
+	addRouteInfo bool
 }
 
 func (r Router) Schemer() jsonschema.Schemer {
@@ -107,11 +129,6 @@ func (r *Router) WithSchemer(schemer jsonschema.Schemer) *Router {
 	return r
 }
 
-func (r *Router) WithOperationID(b bool) *Router {
-	r.setOperationID = b
-	return r
-}
-
 // DefaultResponse sets the default response on all operations. Can be overriden
 // at the route level.
 func (r *Router) DefaultResponse(desc string, obj any, contentType ...string) {
@@ -133,13 +150,6 @@ func (r *Router) DefaultStatusResponse(code int, desc string, obj any, contentTy
 		return
 	}
 	r.defaultStatusRoutes[code] = "#/components/responses/" + statusCode
-}
-
-// PanicOnError enables how errors are handled. By default all errors
-// are added to an error array accessable via Errors(). If this is set to true
-// panic will instead be called on error.
-func (r *Router) PanicOnError(b bool) {
-	r.panicOnError = b
 }
 
 func (r *Router) setDefaultStatusResponse(code string, desc string, obj any, contentType ...string) error {
@@ -187,11 +197,7 @@ func (r *Router) handleErr(err error) {
 		err = fmt.Errorf("%s: %w", caller, err)
 	}
 
-	if r.panicOnError {
-		panic(err)
-	} else {
-		r.errors = append(r.errors, err)
-	}
+	r.errorSink(err)
 }
 
 func (r Router) clone() Router {
@@ -203,9 +209,8 @@ func (r Router) clone() Router {
 		defaultStatusRoutes: r.defaultStatusRoutes,
 		defaultRouteRef:     r.defaultRouteRef,
 		defaultContentType:  r.defaultContentType,
-		errors:              []error{},
-		panicOnError:        r.panicOnError,
-		setOperationID:      r.setOperationID,
+		errorSink:           r.errorSink,
+		operationIDGrabber:  r.operationIDGrabber,
 	}
 }
 
@@ -320,8 +325,6 @@ func (r *Router) Mount(pattern string, h http.Handler, args ...string) {
 			}
 		}
 
-		r.errors = append(r.errors, router.errors...)
-
 		// update the sub routers API to match this one
 		router.spec.OpenAPI = r.spec.OpenAPI
 		for _, mounted := range routers {
@@ -384,9 +387,9 @@ func (r *Router) Method(method, pattern string, h http.HandlerFunc, options ...o
 		}
 	}
 
-	if r.setOperationID && operation.OperationID == "" {
+	if getID := r.operationIDGrabber; getID != nil && operation.OperationID == "" {
 		// if an operation id isn't already set, try to use the handler name for one
-		if name := getPublicFunctionName(h); name != "" {
+		if name := getID(h); name != "" {
 			operation.OperationID = name
 		}
 	}
@@ -415,7 +418,7 @@ func (r *Router) Method(method, pattern string, h http.HandlerFunc, options ...o
 		}
 	}
 
-	if r.setRouteInfo {
+	if r.addRouteInfo {
 		// Because chi.Context works, to get the full path needed to match to an openapi path the
 		// middleware needs to run at the _last_ router (if there are any mounted routers). The
 		// easiest place to do so is right before the handler

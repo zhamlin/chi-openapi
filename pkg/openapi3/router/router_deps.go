@@ -3,6 +3,7 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/zhamlin/chi-openapi/internal"
@@ -14,10 +15,23 @@ import (
 
 type ResponseHandler func(w http.ResponseWriter, r *http.Request, resp any, err error)
 
+type RequestBodyLoader func(r *http.Request, obj any) error
+
 type DepConfig struct {
+	Config
 	Container         *container.Container
 	RequestBodyLoader RequestBodyLoader
 	ResponseHandler   ResponseHandler
+}
+
+func (c DepConfig) WithSchemer(schemer jsonschema.Schemer) DepConfig {
+	c.Schemer = &schemer
+	return c
+}
+
+func (c DepConfig) WithContainer(container container.Container) DepConfig {
+	c.Container = &container
+	return c
 }
 
 type DepRouter struct {
@@ -32,17 +46,23 @@ type DepRouter struct {
 }
 
 func defaultRequestBodyLoader(r *http.Request, obj any) error {
-	err := json.NewDecoder(r.Body).Decode(obj)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		return fmt.Errorf("failed to decode request body (%T): %w", obj, err)
+		return fmt.Errorf("failed to read the request body: %w", err)
+	}
+	err = json.Unmarshal(body, obj)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal request body (%T): %w", obj, err)
 	}
 	return nil
 }
 
-func NewDepRouter(title, version string, cfg DepConfig) *DepRouter {
+func NewDepRouter(cfg DepConfig) *DepRouter {
 	if cfg.RequestBodyLoader == nil {
 		cfg.RequestBodyLoader = defaultRequestBodyLoader
 	}
+
+	// TODO: remove?
 	if cfg.ResponseHandler == nil {
 		cfg.ResponseHandler = func(w http.ResponseWriter, r *http.Request, resp any, err error) {
 			if err != nil {
@@ -50,38 +70,23 @@ func NewDepRouter(title, version string, cfg DepConfig) *DepRouter {
 			}
 		}
 	}
+
 	if cfg.Container == nil {
-		c := container.New()
-		cfg.Container = &c
+		cfg = cfg.WithContainer(container.New())
 	}
 
-	router := NewRouter(title, version)
+	router := NewRouter(cfg.Config)
 	return &DepRouter{
 		router:            router,
-		Container:         *cfg.Container,
 		mounted:           []*DepRouter{},
+		Container:         *cfg.Container,
 		RequestBodyLoader: cfg.RequestBodyLoader,
 		ResponseHandler:   cfg.ResponseHandler,
 	}
 }
 
-func (r *DepRouter) WithOperationID(b bool) *DepRouter {
-	r.router = r.router.WithOperationID(b)
-	return r
-}
-
-func (r *DepRouter) WithSchemer(schemer jsonschema.Schemer) *DepRouter {
-	r.router.schemer = schemer
-	return r
-}
-
 func (r *DepRouter) Schemer() jsonschema.Schemer {
 	return r.router.schemer
-}
-
-func (r *DepRouter) WithContainer(c container.Container) *DepRouter {
-	r.Container = c
-	return r
 }
 
 func (r DepRouter) clone() DepRouter {
@@ -120,17 +125,6 @@ func (r DepRouter) OpenAPI() openapi3.OpenAPI {
 	return r.router.OpenAPI()
 }
 
-func (r DepRouter) Errors() []error {
-	return r.router.Errors()
-}
-
-// PanicOnError enables how errors are handled. By default all errors
-// are added to an error array accessable via Errors(). If this is set to true
-// panic will instead be called on error.
-func (r *DepRouter) PanicOnError(b bool) {
-	r.router.panicOnError = b
-}
-
 // DefaultStatusResponse sets the default response for the specified status code on all operations.
 // Can be overriden at the route level.
 func (r *DepRouter) DefaultStatusResponse(code int, desc string, obj any, contentType ...string) {
@@ -166,7 +160,7 @@ func (r *DepRouter) Mount(pattern string, h http.Handler, args ...string) {
 			router.ResponseHandler = r.ResponseHandler
 			router.RequestBodyLoader = r.RequestBodyLoader
 		}
-		// r.requestHandler takes precedence over the router being mounted
+		// r.ResponseHandler takes precedence over the router being mounted
 		for _, router := range depRouter.mounted {
 			copyFns(router)
 		}
@@ -228,19 +222,15 @@ func addParams(params []openapi3.Parameter) operations.Option {
 func (r *DepRouter) Method(method, pattern string, handler any, options ...operations.Option) {
 	h, fnInfo := r.createHandler(handler)
 
-	if r.router.setOperationID {
-		if name := getPublicFunctionName(handler); name != "" {
+	if getID := r.router.operationIDGrabber; getID != nil {
+		if id := getID(handler); id != "" {
 			// this option needs to come first so it can be overriden
 			// if Method was already supplied with an ID
-			options = append([]operations.Option{operations.ID(name)}, options...)
+			options = append([]operations.Option{operations.ID(id)}, options...)
 		}
 	}
 
-	needsRouteInfo := false
-	if len(fnInfo.params) > 0 {
-		options = append(options, addParams(fnInfo.params))
-		needsRouteInfo = true
-	}
+	options = append(options, addParams(fnInfo.params))
 	if body := fnInfo.requestBody; body.Type != nil {
 		desc := body.Tag.Get("doc")
 		required := true
@@ -253,15 +243,15 @@ func (r *DepRouter) Method(method, pattern string, handler any, options ...opera
 			}
 		}
 		options = append(options, operations.BodyObj(desc, body.Type, required))
-		needsRouteInfo = true
 	}
 
-	oldSetRouteInfo := r.router.setRouteInfo
+	oldSetRouteInfo := r.router.addRouteInfo
 	{
-		r.router.setRouteInfo = needsRouteInfo
+		needsRouteInfo := r.router.addRouteInfo || len(fnInfo.params) > 0
+		r.router.addRouteInfo = needsRouteInfo
 		r.router.Method(method, pattern, h, options...)
 	}
-	r.router.setRouteInfo = oldSetRouteInfo
+	r.router.addRouteInfo = oldSetRouteInfo
 }
 
 func (r *DepRouter) Connect(pattern string, h any, options ...operations.Option) {
