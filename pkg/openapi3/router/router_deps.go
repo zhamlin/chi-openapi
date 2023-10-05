@@ -12,52 +12,61 @@ import (
 	"github.com/zhamlin/chi-openapi/pkg/openapi3/operations"
 )
 
-type RequestHandler func(w http.ResponseWriter, r *http.Request, resp any, err error)
+type ResponseHandler func(w http.ResponseWriter, r *http.Request, resp any, err error)
+
+type DepConfig struct {
+	Container         *container.Container
+	RequestBodyLoader RequestBodyLoader
+	ResponseHandler   ResponseHandler
+}
 
 type DepRouter struct {
 	// keep this as a private field vs embedding to
 	// prevent the *Router from being used directly
 	router            *Router
-	container         container.Container
-	requestHandler    RequestHandler
-	requestBodyLoader RequestBodyLoader
+	Container         container.Container
+	ResponseHandler   ResponseHandler
+	RequestBodyLoader RequestBodyLoader
 
 	mounted []*DepRouter
 }
 
-func NewDepRouter(title, version string) *DepRouter {
-	router := NewRouter(title, version)
-	return &DepRouter{
-		router:    router,
-		container: container.New(),
-		mounted:   []*DepRouter{},
-		requestBodyLoader: func(r *http.Request, obj any) error {
-			err := json.NewDecoder(r.Body).Decode(obj)
-			if err != nil {
-				return fmt.Errorf("failed to decode request body (%T): %w", obj, err)
-			}
-			return nil
-		},
-		requestHandler: func(w http.ResponseWriter, r *http.Request, resp any, err error) {
+func defaultRequestBodyLoader(r *http.Request, obj any) error {
+	err := json.NewDecoder(r.Body).Decode(obj)
+	if err != nil {
+		return fmt.Errorf("failed to decode request body (%T): %w", obj, err)
+	}
+	return nil
+}
+
+func NewDepRouter(title, version string, cfg DepConfig) *DepRouter {
+	if cfg.RequestBodyLoader == nil {
+		cfg.RequestBodyLoader = defaultRequestBodyLoader
+	}
+	if cfg.ResponseHandler == nil {
+		cfg.ResponseHandler = func(w http.ResponseWriter, r *http.Request, resp any, err error) {
 			if err != nil {
 				panic(fmt.Sprintf("DepRouter Default RequestHandler: %s", err.Error()))
 			}
-		},
+		}
+	}
+	if cfg.Container == nil {
+		c := container.New()
+		cfg.Container = &c
+	}
+
+	router := NewRouter(title, version)
+	return &DepRouter{
+		router:            router,
+		Container:         *cfg.Container,
+		mounted:           []*DepRouter{},
+		RequestBodyLoader: cfg.RequestBodyLoader,
+		ResponseHandler:   cfg.ResponseHandler,
 	}
 }
 
 func (r *DepRouter) WithOperationID(b bool) *DepRouter {
 	r.router = r.router.WithOperationID(b)
-	return r
-}
-
-func (r *DepRouter) WithRequestLoader(loader RequestBodyLoader) *DepRouter {
-	r.requestBodyLoader = loader
-	return r
-}
-
-func (r *DepRouter) WithRequestHandler(handler RequestHandler) *DepRouter {
-	r.requestHandler = handler
 	return r
 }
 
@@ -71,7 +80,7 @@ func (r *DepRouter) Schemer() jsonschema.Schemer {
 }
 
 func (r *DepRouter) WithContainer(c container.Container) *DepRouter {
-	r.container = c
+	r.Container = c
 	return r
 }
 
@@ -79,11 +88,10 @@ func (r DepRouter) clone() DepRouter {
 	router := r.router.clone()
 	return DepRouter{
 		router:            &router,
-		requestHandler:    r.requestHandler,
-		requestBodyLoader: r.requestBodyLoader,
-		container:         r.container,
-		// mounted:           r.mounted,
-		mounted: []*DepRouter{},
+		ResponseHandler:   r.ResponseHandler,
+		RequestBodyLoader: r.RequestBodyLoader,
+		Container:         r.Container,
+		mounted:           []*DepRouter{},
 	}
 }
 
@@ -155,8 +163,8 @@ func (r *DepRouter) Route(pattern string, fn func(r *DepRouter), args ...string)
 func (r *DepRouter) Mount(pattern string, h http.Handler, args ...string) {
 	if depRouter, ok := h.(*DepRouter); ok {
 		copyFns := func(router *DepRouter) {
-			router.requestHandler = r.requestHandler
-			router.requestBodyLoader = r.requestBodyLoader
+			router.ResponseHandler = r.ResponseHandler
+			router.RequestBodyLoader = r.RequestBodyLoader
 		}
 		// r.requestHandler takes precedence over the router being mounted
 		for _, router := range depRouter.mounted {

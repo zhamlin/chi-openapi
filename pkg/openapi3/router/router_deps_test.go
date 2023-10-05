@@ -20,10 +20,11 @@ import (
 )
 
 func newDepRouter(t Tester) *router.DepRouter {
-	router := router.NewDepRouter("", "").
-		WithRequestHandler(func(_ http.ResponseWriter, _ *http.Request, _ any, err error) {
+	router := router.NewDepRouter("", "", router.DepConfig{
+		ResponseHandler: func(_ http.ResponseWriter, _ *http.Request, _ any, err error) {
 			MustMatch(t, err, nil, "request handler returned an error")
-		})
+		},
+	})
 	router.PanicOnError(true)
 	return router
 }
@@ -542,23 +543,20 @@ func TestDepRouterWithMiddleware(t *testing.T) {
 
 func TestDepRouterRequestHandler(t *testing.T) {
 	rootRouter := newDepRouter(t)
-	rootRouter = rootRouter.WithRequestHandler(
+	rootRouter.ResponseHandler =
 		func(w http.ResponseWriter, _ *http.Request, _ any, _ error) {
 			w.WriteHeader(http.StatusTeapot)
-		},
-	)
+		}
 	subRouter := newDepRouter(t)
-	subRouter = subRouter.WithRequestHandler(
+	subRouter.ResponseHandler =
 		func(w http.ResponseWriter, _ *http.Request, _ any, _ error) {
 			w.WriteHeader(http.StatusNotImplemented)
-		},
-	)
+		}
 	subSubRouter := newDepRouter(t)
-	subSubRouter = subSubRouter.WithRequestHandler(
+	subSubRouter.ResponseHandler =
 		func(w http.ResponseWriter, _ *http.Request, _ any, _ error) {
 			w.WriteHeader(http.StatusInternalServerError)
-		},
-	)
+		}
 
 	h := func(w http.ResponseWriter, r *http.Request) error {
 		return errors.New("error")
@@ -576,23 +574,22 @@ func TestDepRouterRequestHandler(t *testing.T) {
 
 func TestDepRouterNested(t *testing.T) {
 	rootRouter := newDepRouter(t)
-	rootRouter = rootRouter.WithRequestHandler(
+	rootRouter.ResponseHandler =
 		func(w http.ResponseWriter, _ *http.Request, _ any, _ error) {
 			w.WriteHeader(http.StatusTeapot)
-		},
-	)
+		}
+
 	subRouter := newDepRouter(t)
-	subRouter = subRouter.WithRequestHandler(
+	subRouter.ResponseHandler =
 		func(w http.ResponseWriter, _ *http.Request, _ any, _ error) {
 			w.WriteHeader(http.StatusNotImplemented)
-		},
-	)
+		}
+
 	subSubRouter := newDepRouter(t)
-	subSubRouter = subSubRouter.WithRequestHandler(
+	subSubRouter.ResponseHandler =
 		func(w http.ResponseWriter, _ *http.Request, _ any, _ error) {
 			w.WriteHeader(http.StatusInternalServerError)
-		},
-	)
+		}
 
 	h := func(r *http.Request, params struct {
 		ID string `path:"id"`
@@ -870,7 +867,8 @@ func BenchmarkDepRouter(b *testing.B) {
 		w.WriteHeader(http.StatusCreated)
 	}
 
-	depRouter := newDepRouter(b).WithRequestHandler(nil)
+	depRouter := newDepRouter(b)
+	depRouter.ResponseHandler = nil
 	depRouter.Get("/", depRouterHandler)
 	depRouter.Get("/test", func(w http.ResponseWriter) {
 		w.WriteHeader(http.StatusCreated)

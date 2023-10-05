@@ -545,7 +545,7 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 	for _, p := range fnParams {
 		if isHttpType(p) {
 			// *http.Request and http.ResponseWriter will be passed in
-			// to c.Run() later so skip them
+			// later so skip them
 			continue
 		}
 		if p.Kind() != reflect.Struct {
@@ -561,7 +561,7 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 		}
 		fnInfo.params = append(fnInfo.params, params...)
 
-		err = createProviderForType(p, router.container, router.requestBodyLoader, &fnInfo)
+		err = createProviderForType(p, router.Container, router.RequestBodyLoader, &fnInfo)
 		if err != nil {
 			return nil, fnInfo, err
 		}
@@ -576,14 +576,14 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 	name := strs[len(strs)-2] + ":" + strs[len(strs)-1]
 	file = path.Base(file)
 
-	plan, err := router.container.CreatePlan(fn, reqType, respWriterType)
+	plan, err := router.Container.CreatePlan(fn, reqType, respWriterType)
 	if err != nil {
 		return nil, fnInfo, err
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		writer := container.MustCast[http.ResponseWriter](w)
-		resp, err := router.container.RunPlan(plan, writer, r)
-		if h := router.requestHandler; h != nil {
+		resp, err := router.Container.RunPlan(plan, writer, r)
+		if h := router.ResponseHandler; h != nil {
 			if err != nil {
 				// TODO:clean up error
 				err = fmt.Errorf("%s:%d %s: %w", file, line, name, err)
