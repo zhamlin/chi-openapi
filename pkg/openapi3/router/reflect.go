@@ -512,6 +512,7 @@ func isHttpType(typ reflect.Type) bool {
 type fnInfo struct {
 	params      []openapi3.Parameter
 	requestBody reflect.StructField
+	hasReturns  bool
 }
 
 // httpHandlerFromFn takes a fn and DepRouter, and returns
@@ -540,6 +541,7 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 	if err := container.IsValidRunFunc(fnType); err != nil {
 		return nil, fnInfo, err
 	}
+	fnInfo.hasReturns = fnType.NumOut() > 0
 
 	fnParams := reflectUtil.GetFuncParams(fnType)
 	for _, p := range fnParams {

@@ -62,15 +62,6 @@ func NewDepRouter(cfg DepConfig) *DepRouter {
 		cfg.RequestBodyLoader = defaultRequestBodyLoader
 	}
 
-	// TODO: remove?
-	if cfg.ResponseHandler == nil {
-		cfg.ResponseHandler = func(w http.ResponseWriter, r *http.Request, resp any, err error) {
-			if err != nil {
-				panic(fmt.Sprintf("DepRouter Default RequestHandler: %s", err.Error()))
-			}
-		}
-	}
-
 	if cfg.Container == nil {
 		cfg = cfg.WithContainer(container.New())
 	}
@@ -221,6 +212,9 @@ func addParams(params []openapi3.Parameter) operations.Option {
 // Method adds routes for `pattern` that matches the `method` HTTP method.
 func (r *DepRouter) Method(method, pattern string, handler any, options ...operations.Option) {
 	h, fnInfo := r.createHandler(handler)
+	if fnInfo.hasReturns && r.ResponseHandler == nil {
+		r.handleError(fmt.Errorf("%T has return values, but router ResponseHandler is not set", handler))
+	}
 
 	if getID := r.router.operationIDGrabber; getID != nil {
 		if id := getID(handler); id != "" {
