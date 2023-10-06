@@ -141,7 +141,8 @@ func TestStringToValue(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		value, err := stringToValue(test.have, reflect.TypeOf(test.typ))
+		value := reflect.New(reflect.TypeOf(test.typ)).Elem()
+		err := loadValueFromString(value, test.have)
 		if test.wantErr {
 			MustNotMatch(t, err, nil, "expected an error got none")
 		} else {
@@ -356,7 +357,8 @@ func TestCreateTypeFromParam(t *testing.T) {
 			if test.urlParams != nil {
 				info.URLParams = test.urlParams
 			}
-			value, err := createTypeFromParam(wantType, p, info)
+			value := reflect.New(wantType).Elem()
+			value, err = loadTypeFromParam(value, p, info)
 			if test.wantErr {
 				MustNotMatch(t, err, nil, "expected an error got none")
 			} else {

@@ -40,7 +40,7 @@ func getPublicFunctionName(fn any) string {
 var errNil = errors.New("received a nil obj")
 
 func createTypeFromQueryParam(
-	typ reflect.Type,
+	val reflect.Value,
 	p openapi3.Parameter,
 	info RouteInfo,
 	schema openapi3.Schema,
@@ -48,7 +48,8 @@ func createTypeFromQueryParam(
 	// TODO: validate p.Style with typ?
 	// At this point validateStyleWithType should have already been called
 
-	typKind := typ.Kind()
+	typ := val.Type()
+	typKind := val.Kind()
 	// https://spec.openapis.org/oas/v3.1.0#styleValues
 	// https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.1.0.md#parameterStyle
 	explode := p.Explode
@@ -59,7 +60,8 @@ func createTypeFromQueryParam(
 		if !has && schema.Default != nil {
 			strDefault, ok := schema.Default.(string)
 			if !ok {
-				return reflect.New(typ).Elem(), nil
+				return val, nil
+				// return reflect.New(typ).Elem(), nil
 			}
 			// treat defaults as a single query param
 			explode = false
@@ -68,12 +70,12 @@ func createTypeFromQueryParam(
 
 		if len(values) == 0 {
 			// TODO: required should be handled by validator, not this func
-			return reflect.New(typ).Elem(), nil
+			// return reflect.New(typ).Elem(), nil
+			return val, nil
 		}
 
 		switch typKind {
 		case reflect.Slice, reflect.Array:
-			typValue := reflect.New(typ).Elem()
 			if !explode {
 				// explode=   ?color=blue&color=black&color=brown
 				// no-explode=?color=blue,black,brown
@@ -82,33 +84,29 @@ func createTypeFromQueryParam(
 				// a single query param separated by commas.
 				values = strings.Split(values[0], ",")
 			}
+			arrayItemType := typ.Elem()
 			for _, value := range values {
-				v, err := stringToValue(value, typ.Elem())
-				if err != nil {
-					return reflect.Value{}, err
+				// create new elem of array
+				v := reflect.New(arrayItemType).Elem()
+				if err := loadValueFromString(v, value); err != nil {
+					return val, err
 				}
-				typValue = reflect.Append(typValue, v)
+				val = reflect.Append(val, v)
 			}
-			return typValue, nil
+			return val, nil
 		default:
 			// try to load the type as a single string
-			val, err := stringToValue(values[0], typ)
-			if err != nil {
-				return reflect.Value{}, err
-			}
-			if val.IsValid() {
-				return val, nil
-			}
+			err := loadValueFromString(val, values[0])
+			return val, err
 		}
 	case openapi3.ParameterStyleDeepObject:
 		if typKind != reflect.Struct {
 			// TODO: Fill in reasons
 			// this _should_ never be reachable for the following reasons:
 			// -
-			panic("non struct type with DeepObject style: this should have been caught before this func")
+			return val, fmt.Errorf("non struct type with DeepObject style: this should have been caught before this func")
 		}
-		typValue := reflect.New(typ).Elem()
-		err := reflectUtil.WalkStructWithIndex(typ, func(i int, field reflect.StructField) error {
+		return val, reflectUtil.WalkStructWithIndex(typ, func(i int, field reflect.StructField) error {
 			name := jsonschema.GetFieldName(field)
 			if name == "" {
 				return nil
@@ -119,58 +117,48 @@ func createTypeFromQueryParam(
 				// TODO: handle default?
 			}
 			if has {
-				val, err := stringToValue(paramStr[0], field.Type)
-				if err != nil {
-					return err
-				}
-				typValue.Field(i).Set(val)
-				return nil
+				fieldValue := val.Field(i)
+				return loadValueFromString(fieldValue, paramStr[0])
 			}
 			return nil
 		})
-		if err != nil {
-			return reflect.Value{}, err
-		}
-		return typValue, nil
 	}
 
 	err := fmt.Errorf("unsupported combo error for query param and location: %v %v",
-		p.Style, typKind)
-	return reflect.Value{}, err
+		p.Style, typKind.String())
+	return val, err
 }
 
-func createTypeFromPathParam(typ reflect.Type, p openapi3.Parameter, info RouteInfo) (reflect.Value, error) {
+func createTypeFromPathParam(val reflect.Value, p openapi3.Parameter, info RouteInfo) (reflect.Value, error) {
 	urlParam, has := info.URLParams[p.Name]
 	if has {
-		urlValue, err := stringToValue(urlParam, typ)
+		err := loadValueFromString(val, urlParam)
 		if err != nil {
-			return reflect.Value{}, fmt.Errorf("stringToValue: %w", err)
+			return val, fmt.Errorf("stringToValue: %w", err)
 		}
-		return urlValue, nil
+		return val, nil
 	}
-	return reflect.Value{}, fmt.Errorf("url param not found: %s (%s)", p.Name, typ.String())
+	return val, fmt.Errorf("url param not found: %s (%s)", p.Name, val.Type().String())
 }
 
-func createTypeFromParam(typ reflect.Type, p openapi3.Parameter, info RouteInfo) (reflect.Value, error) {
+func loadTypeFromParam(val reflect.Value, p openapi3.Parameter, info RouteInfo) (reflect.Value, error) {
 	if p.Schema.Ref != nil {
 		// TODO: look up ref in RouteInfo
-		return reflect.Value{}, fmt.Errorf("schema ref not supported")
+		return val, fmt.Errorf("schema ref not supported")
 	}
 	schema := openapi3.Schema{Schema: p.Schema.Spec}
 
 	switch openapi3.ParameterLocation(p.In) {
 	case openapi3.ParameterLocationQuery:
-
-		return createTypeFromQueryParam(typ, p, info, schema)
+		return createTypeFromQueryParam(val, p, info, schema)
 	case openapi3.ParameterLocationPath:
-		return createTypeFromPathParam(typ, p, info)
+		return createTypeFromPathParam(val, p, info)
 	default:
-		return reflect.Value{}, fmt.Errorf("param location not supported: %s", p.In)
+		return val, fmt.Errorf("param location not supported: %s", p.In)
 	}
 }
 
 func getParamAsString(info RouteInfo, name string, loc openapi3.ParameterLocation) ([]string, bool) {
-	r := info.Request
 	switch loc {
 	case openapi3.ParameterLocationPath:
 		value, has := info.URLParams[name]
@@ -181,13 +169,13 @@ func getParamAsString(info RouteInfo, name string, loc openapi3.ParameterLocatio
 		return values, has
 	case openapi3.ParameterLocationHeader:
 		key := textproto.CanonicalMIMEHeaderKey(name)
-		values, has := r.Header[key]
+		values, has := info.Request.Header[key]
 		return values, has
 	case openapi3.ParameterLocationQuery:
 		values, has := info.QueryValues[name]
 		return values, has
 	case openapi3.ParameterLocationCookie:
-		c, err := r.Cookie(name)
+		c, err := info.Request.Cookie(name)
 		// r.Cookie _should_ only return one err if any: http.ErrNoCookie
 		has := err == nil
 		values := []string{}
@@ -199,77 +187,85 @@ func getParamAsString(info RouteInfo, name string, loc openapi3.ParameterLocatio
 	return []string{}, false
 }
 
-func stringToValue(str string, typ reflect.Type) (reflect.Value, error) {
-	kind := typ.Kind()
-	noValue := reflect.Value{}
+func loadValueFromString(val reflect.Value, str string) error {
+	typ := val.Type()
+	kind := val.Kind()
 
 	if reflectUtil.TypeImplementsTextUnmarshal(typ) {
 		isPtr := kind == reflect.Ptr
-		if isPtr {
-			nonPtrType := typ.Elem()
-			typ = nonPtrType
+		if isPtr && val.IsNil() {
+			val.Set(reflect.New(typ.Elem()))
+		} else {
+			val = val.Addr()
 		}
 
-		// create a pointer to typ
-		fieldValue := reflect.New(typ)
-		unmarhsaller := fieldValue.Interface().(encoding.TextUnmarshaler)
+		unmarhsaller := val.Interface().(encoding.TextUnmarshaler)
 		err := unmarhsaller.UnmarshalText([]byte(str))
 		if err != nil {
-			return noValue, err
+			return fmt.Errorf("failed unmarhsalling: %w", err)
 		}
-
-		if isPtr {
-			// return pointer to typ
-			return fieldValue, nil
-		}
-		// deref pointer to return typ
-		return fieldValue.Elem(), nil
+		return nil
 	}
 
 	switch kind {
 	case reflect.String:
-		return reflect.ValueOf(str), nil
+		val.Set(reflect.ValueOf(str))
+		return nil
 	case reflect.Bool:
+		// TODO: use strconv.ParseBool
 		b, err := internal.BoolFromString(str)
-		return reflect.ValueOf(b), err
+		val.Set(reflect.ValueOf(b))
+		return err
 	case reflect.Uint:
 		i, err := strconv.ParseUint(str, 10, 32)
-		return reflect.ValueOf(uint(i)), err
+		val.Set(reflect.ValueOf(uint(i)))
+		return err
 	case reflect.Uint8:
 		i, err := strconv.ParseUint(str, 10, 32)
-		return reflect.ValueOf(uint8(i)), err
+		val.Set(reflect.ValueOf(uint8(i)))
+		return err
 	case reflect.Uint16:
 		i, err := strconv.ParseUint(str, 10, 32)
-		return reflect.ValueOf(uint16(i)), err
+		val.Set(reflect.ValueOf(uint16(i)))
+		return err
 	case reflect.Uint32:
 		i, err := strconv.ParseUint(str, 10, 32)
-		return reflect.ValueOf(uint32(i)), err
+		val.Set(reflect.ValueOf(uint32(i)))
+		return err
 	case reflect.Uint64:
 		i, err := strconv.ParseUint(str, 10, 64)
-		return reflect.ValueOf(i), err
+		val.Set(reflect.ValueOf(i))
+		return err
 	case reflect.Int:
 		i, err := strconv.ParseInt(str, 10, 64)
-		return reflect.ValueOf(int(i)), err
+		val.Set(reflect.ValueOf(int(i)))
+		return err
 	case reflect.Int8:
 		i, err := strconv.ParseInt(str, 10, 32)
-		return reflect.ValueOf(int8(i)), err
+		val.Set(reflect.ValueOf(int8(i)))
+		return err
 	case reflect.Int16:
 		i, err := strconv.ParseInt(str, 10, 32)
-		return reflect.ValueOf(int16(i)), err
+		val.Set(reflect.ValueOf(int16(i)))
+		return err
 	case reflect.Int32:
 		i, err := strconv.ParseInt(str, 10, 32)
-		return reflect.ValueOf(int32(i)), err
+		val.Set(reflect.ValueOf(int32(i)))
+		return err
 	case reflect.Int64:
 		i, err := strconv.ParseInt(str, 10, 64)
-		return reflect.ValueOf(i), err
+		val.Set(reflect.ValueOf(i))
+		return err
 	case reflect.Float64:
 		i, err := strconv.ParseFloat(str, 64)
-		return reflect.ValueOf(i), err
+		val.Set(reflect.ValueOf(i))
+		return err
 	case reflect.Float32:
 		i, err := strconv.ParseFloat(str, 32)
-		return reflect.ValueOf(float32(i)), err
+		val.Set(reflect.ValueOf(float32(i)))
+		return err
 	}
-	return noValue, nil
+	return fmt.Errorf("can not create type from string: %s", typ.String())
 }
 
 type structField struct {
@@ -279,6 +275,10 @@ type structField struct {
 	fieldIndex    int
 	needProvider  bool
 	isRequestBody bool
+}
+
+func isRequestBody(field reflect.StructField) bool {
+	return field.Tag.Get("request") == "body"
 }
 
 // getStructFields returns all of the fields on the struct and checks to
@@ -300,11 +300,10 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 	}
 
 	err := reflectUtil.WalkStructWithIndex(typ, func(idx int, field reflect.StructField) error {
-		if v := field.Tag.Get("request"); v == "body" {
+		if isRequestBody(field) {
 			inputTypes.Add(structField{
 				Type:          field.Type,
 				fieldIndex:    idx,
-				needProvider:  true,
 				isRequestBody: true,
 			})
 			return nil
@@ -351,27 +350,6 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 	return inputTypes, err
 }
 
-type RequestBodyLoader func(r *http.Request, obj any) error
-
-func createProviderForJsonRequestBody(
-	t reflect.Type,
-	loader RequestBodyLoader,
-) any {
-	fnType := reflect.FuncOf([]reflect.Type{reqType}, []reflect.Type{t, reflectUtil.ErrType}, false)
-	dynamicFunc := func(in []reflect.Value) []reflect.Value {
-		// if this type check fails panic
-		req := in[0].Interface().(*http.Request)
-		obj := reflect.New(t)
-		if err := loader(req, obj.Interface()); err != nil {
-			return []reflect.Value{reflect.Zero(t), reflect.ValueOf(err)}
-		}
-		// reflect.New returns a pointer so return the object directly
-		return []reflect.Value{reflect.Indirect(obj), reflect.Zero(reflectUtil.ErrType)}
-	}
-	fn := reflect.MakeFunc(fnType, dynamicFunc)
-	return fn.Interface()
-}
-
 func createProviderForType(
 	typ reflect.Type,
 	c container.Container,
@@ -382,18 +360,15 @@ func createProviderForType(
 	if err != nil {
 		return err
 	}
-	// ensure a *http.Request is available
-	fields.Add(structField{Type: reqType})
 
 	inputTypes := []reflect.Type{}
 	for field := range fields {
-		if field.needProvider && field.isRequestBody {
+		// TODO: check for an already set request body
+		if field.isRequestBody {
 			structField := typ.Field(field.fieldIndex)
 			fnInfo.requestBody = structField
-			if !c.HasType(field.Type) {
-				fn := createProviderForJsonRequestBody(field.Type, loader)
-				c.Provide(fn)
-			}
+			// skip adding the request body as a function param
+			continue
 		} else if field.needProvider {
 			err := createProviderForType(field.Type, c, loader, fnInfo)
 			if err != nil {
@@ -404,7 +379,7 @@ func createProviderForType(
 	}
 
 	if !c.HasType(typ) {
-		fn, err := newStructGenerator(typ, inputTypes, fnInfo)
+		fn, err := newStructGenerator(typ, inputTypes, fnInfo, loader)
 		if err != nil {
 			return err
 		}
@@ -413,18 +388,19 @@ func createProviderForType(
 	return nil
 }
 
+var ErrMissingRouteInfo = errors.New("ctx missing RouteInfo")
+
 // newStructGenerator takes a struct type and a set of the inputs it expects
 // from a container to set its fields. A new function `fn(inputs...) (typ, error)` is returned
 // which will create a new struct and set each field via:
 // - createTypeFromParam if the field has a parameter tag
 // - from the inputs of the function
-func newStructGenerator(typ reflect.Type, inputs []reflect.Type, fnInfo *fnInfo) (any, error) {
-	// create a map of types to the index in the input array
-	typesToIndex := make(map[reflect.Type]int, len(inputs))
-	for i, item := range inputs {
-		typesToIndex[item] = i
-	}
-
+func newStructGenerator(
+	typ reflect.Type,
+	inputs []reflect.Type,
+	fnInfo *fnInfo,
+	loader RequestBodyLoader,
+) (any, error) {
 	type Value struct {
 		fieldIdx int
 		inputIdx int
@@ -434,10 +410,25 @@ func newStructGenerator(typ reflect.Type, inputs []reflect.Type, fnInfo *fnInfo)
 
 	type Param struct {
 		fieldIdx int
-		typ      reflect.Type
 		param    openapi3.Parameter
 	}
 	params := []Param{}
+
+	type Body struct {
+		fieldIdx int
+		typ      reflect.Type
+	}
+	var body Body
+
+	hasBody := fnInfo.requestBody.Type != nil
+
+	// ensure a *http.Request is available
+	inputs = append([]reflect.Type{reqType}, inputs...)
+	// create a map of types to the index in the input array
+	typesToIndex := make(map[reflect.Type]int, len(inputs))
+	for i, item := range inputs {
+		typesToIndex[item] = i
+	}
 
 	// check to see if every field on the struct can be created
 	err := reflectUtil.WalkStructWithIndex(typ,
@@ -447,7 +438,6 @@ func newStructGenerator(typ reflect.Type, inputs []reflect.Type, fnInfo *fnInfo)
 					if param.Name == name && param.In == string(location) {
 						params = append(params, Param{
 							fieldIdx: idx,
-							typ:      field.Type,
 							param:    param,
 						})
 						return nil
@@ -456,10 +446,17 @@ func newStructGenerator(typ reflect.Type, inputs []reflect.Type, fnInfo *fnInfo)
 				return fmt.Errorf("could not load param: %s: in: %s", name, location)
 			}
 
+			if hasBody && isRequestBody(field) {
+				body = Body{
+					fieldIdx: idx,
+					typ:      fnInfo.requestBody.Type,
+				}
+				return nil
+			}
+
 			inputIdx, has := typesToIndex[field.Type]
 			if !has {
-				// TODO: improve error message
-				return fmt.Errorf("non param input not in the input array")
+				return fmt.Errorf("%s is not in the input array", field.Type.String())
 			}
 			values = append(values, Value{
 				fieldIdx: idx,
@@ -472,23 +469,36 @@ func newStructGenerator(typ reflect.Type, inputs []reflect.Type, fnInfo *fnInfo)
 		return nil, err
 	}
 
+	if hasBody && body.typ == nil {
+		return nil, fmt.Errorf("%s requires a request body but none was found",
+			fnInfo.requestBody.Type.String())
+	}
+
 	fnType := reflect.FuncOf(inputs, []reflect.Type{typ, reflectUtil.ErrType}, false)
 	dynamicFunc := func(in []reflect.Value) []reflect.Value {
-		// if this function does not have a *http.Request panic
-		req := in[typesToIndex[reqType]].Interface().(*http.Request)
+		req := in[0].Interface().(*http.Request)
 		routeInfo, has := GetRouteInfo(req.Context())
 		if !has && len(params) > 0 {
-			err := fmt.Errorf("missing required openapi info in context")
-			return []reflect.Value{reflect.Zero(typ), reflect.ValueOf(err)}
+			return []reflect.Value{reflect.Zero(typ), reflect.ValueOf(ErrMissingRouteInfo)}
 		}
 
 		typObj := reflect.New(typ).Elem()
+		if body.typ != nil {
+			field := typObj.Field(body.fieldIdx)
+			if err := loader(req, field.Addr().Interface()); err != nil {
+				return []reflect.Value{reflect.Zero(typ), reflect.ValueOf(err)}
+			}
+		}
+
 		for _, p := range params {
-			paramValue, err := createTypeFromParam(p.typ, p.param, routeInfo)
+			field := typObj.Field(p.fieldIdx)
+			value, err := loadTypeFromParam(field, p.param, routeInfo)
 			if err != nil {
 				return []reflect.Value{reflect.Zero(typ), reflect.ValueOf(err)}
 			}
-			typObj.Field(p.fieldIdx).Set(paramValue)
+			if field != value {
+				field.Set(value)
+			}
 		}
 
 		for _, v := range values {
@@ -578,7 +588,16 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 	name := strs[len(strs)-2] + ":" + strs[len(strs)-1]
 	file = path.Base(file)
 
-	plan, err := router.Container.CreatePlan(fn, reqType, respWriterType)
+	ignore := []any{reqType, respWriterType}
+	if body := fnInfo.requestBody.Type; body != nil {
+		ignore = append(ignore, body)
+		// TODO: explain
+		if reflectUtil.ArrayKind.Has(body.Kind()) {
+			ignore = append(ignore, body.Elem())
+		}
+	}
+
+	plan, err := router.Container.CreatePlan(fn, ignore...)
 	if err != nil {
 		return nil, fnInfo, err
 	}
