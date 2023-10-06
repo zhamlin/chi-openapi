@@ -583,8 +583,7 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 		return nil, fnInfo, err
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		writer := container.MustCast[http.ResponseWriter](w)
-		resp, err := router.Container.RunPlan(plan, writer, r)
+		resp, err := router.Container.RunPlan(plan, &w, r)
 		if h := router.ResponseHandler; h != nil {
 			if err != nil {
 				// TODO:clean up error

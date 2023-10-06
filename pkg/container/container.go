@@ -11,28 +11,6 @@ import (
 	runtimeUtil "github.com/zhamlin/chi-openapi/internal/runtime"
 )
 
-func MustCast[T any](obj any) any {
-	v, ok := Cast[T](obj)
-	if !ok {
-		panic(fmt.Sprintf("%T could not be casted to %T", obj, *new(T)))
-	}
-	return v
-}
-
-func Cast[T any](obj any) (any, bool) {
-	if t, ok := obj.(T); ok {
-		isInterface := reflect.TypeOf(*new(T)) == nil
-		if isInterface {
-			typ := reflectUtil.MakeType[T]()
-			v := reflect.New(typ)
-			v.Elem().Set(reflect.ValueOf(t))
-			return v.Interface(), true
-		}
-		return t, true
-	}
-	return obj, false
-}
-
 type Container = containerWithHooks
 
 func New() Container {

@@ -440,9 +440,10 @@ func TestContainerPlanIgnore(t *testing.T) {
 	plan, err := c.CreatePlan(func(Ctx) {}, Start{}, respWriterType)
 	MustMatch(t, err, nil)
 
-	w := httptest.NewRecorder()
-	_, err = c.RunPlan(plan, Start{},
-		container.MustCast[http.ResponseWriter](w))
+	w := func() http.ResponseWriter {
+		return httptest.NewRecorder()
+	}()
+	_, err = c.RunPlan(plan, Start{}, &w)
 	MustMatch(t, err, nil)
 }
 
