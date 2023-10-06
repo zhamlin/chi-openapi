@@ -621,7 +621,7 @@ func (c container) createType(ctx context, typ reflect.Type) (reflect.Value, err
 	nodeIndex := indexes.Items()[0]
 	providerNode, err := c.graph.Get(nodeIndex)
 	if err != nil {
-		return emptyValue, err
+		return emptyValue, fmt.Errorf("failed to get node from graph: %w", err)
 	}
 
 	switch nodeType := providerNode.typ.(type) {
@@ -636,15 +636,18 @@ func (c container) createType(ctx context, typ reflect.Type) (reflect.Value, err
 			}
 			value, has := ctx.Get(typ)
 			if !has {
-				panic("function did not return the expected type")
+				return reflect.Value{},
+					fmt.Errorf("func (%s) did not return the expected type: %s", nodeType.value.String(), typ.String())
 			}
 			return value, nil
 		}
 		return nodeType.value, nil
 	case nodeTypeValue:
-		panic("non provider node can not create types")
+		return reflect.Value{},
+			fmt.Errorf("value node can not create types: %s", providerNode.refelctType.String())
 	default:
-		panic(fmt.Sprintf("invalid node type: %T", nodeType))
+		return reflect.Value{},
+			fmt.Errorf("invalid node type: %T", nodeType)
 	}
 }
 
