@@ -21,7 +21,7 @@ import (
 )
 
 func getPublicFunctionName(fn any) string {
-	getFunctionName := func(temp interface{}) string {
+	getFunctionName := func(temp any) string {
 		strs := strings.Split((runtime.FuncForPC(reflect.ValueOf(temp).Pointer()).Name()), ".")
 		return strs[len(strs)-1]
 	}
@@ -61,7 +61,6 @@ func createTypeFromQueryParam(
 			strDefault, ok := schema.Default.(string)
 			if !ok {
 				return val, nil
-				// return reflect.New(typ).Elem(), nil
 			}
 			// treat defaults as a single query param
 			explode = false
@@ -70,7 +69,6 @@ func createTypeFromQueryParam(
 
 		if len(values) == 0 {
 			// TODO: required should be handled by validator, not this func
-			// return reflect.New(typ).Elem(), nil
 			return val, nil
 		}
 
@@ -309,7 +307,7 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 			return nil
 		}
 
-		if isHttpType(field.Type) {
+		if isHTTPType(field.Type) {
 			// these types will be passed to the container via the args
 			// so always add them
 			inputTypes.Add(structField{Type: field.Type})
@@ -344,7 +342,7 @@ func getStructFields(typ reflect.Type, c container.Container) (internal.Set[stru
 			inputTypes.Add(structField{Type: field.Type, needProvider: true})
 			return nil
 		}
-		return retErr(fmt.Errorf("cannot create field `%s (%s)` for struct: %s",
+		return retErr(fmt.Errorf("cannot create field `%s: %s` for struct: %s",
 			field.Name, field.Type.String(), typ.String()))
 	})
 	return inputTypes, err
@@ -404,23 +402,14 @@ func newStructGenerator(
 	type Value struct {
 		fieldIdx int
 		inputIdx int
-		typ      reflect.Type
 	}
 	values := []Value{}
 
 	type Param struct {
-		fieldIdx int
 		param    openapi3.Parameter
+		fieldIdx int
 	}
 	params := []Param{}
-
-	type Body struct {
-		fieldIdx int
-		typ      reflect.Type
-	}
-	var body Body
-
-	hasBody := fnInfo.requestBody.Type != nil
 
 	// ensure a *http.Request is available
 	inputs = append([]reflect.Type{reqType}, inputs...)
@@ -430,6 +419,8 @@ func newStructGenerator(
 		typesToIndex[item] = i
 	}
 
+	hasBody := fnInfo.requestBody.Type != nil
+	bodyFieldIndex := -1
 	// check to see if every field on the struct can be created
 	err := reflectUtil.WalkStructWithIndex(typ,
 		func(idx int, field reflect.StructField) error {
@@ -447,10 +438,7 @@ func newStructGenerator(
 			}
 
 			if hasBody && isRequestBody(field) {
-				body = Body{
-					fieldIdx: idx,
-					typ:      fnInfo.requestBody.Type,
-				}
+				bodyFieldIndex = idx
 				return nil
 			}
 
@@ -461,7 +449,6 @@ func newStructGenerator(
 			values = append(values, Value{
 				fieldIdx: idx,
 				inputIdx: inputIdx,
-				typ:      field.Type,
 			})
 			return nil
 		})
@@ -469,7 +456,7 @@ func newStructGenerator(
 		return nil, err
 	}
 
-	if hasBody && body.typ == nil {
+	if hasBody && bodyFieldIndex < 0 {
 		return nil, fmt.Errorf("%s requires a request body but none was found",
 			fnInfo.requestBody.Type.String())
 	}
@@ -483,8 +470,8 @@ func newStructGenerator(
 		}
 
 		typObj := reflect.New(typ).Elem()
-		if body.typ != nil {
-			field := typObj.Field(body.fieldIdx)
+		if bodyFieldIndex >= 0 {
+			field := typObj.Field(bodyFieldIndex)
 			if err := loader(req, field.Addr().Interface()); err != nil {
 				return []reflect.Value{reflect.Zero(typ), reflect.ValueOf(err)}
 			}
@@ -496,9 +483,7 @@ func newStructGenerator(
 			if err != nil {
 				return []reflect.Value{reflect.Zero(typ), reflect.ValueOf(err)}
 			}
-			if field != value {
-				field.Set(value)
-			}
+			field.Set(value)
 		}
 
 		for _, v := range values {
@@ -515,7 +500,7 @@ var (
 	respWriterType = reflectUtil.MakeType[http.ResponseWriter]()
 )
 
-func isHttpType(typ reflect.Type) bool {
+func isHTTPType(typ reflect.Type) bool {
 	return typ == reqType || typ == respWriterType
 }
 
@@ -535,27 +520,27 @@ type fnInfo struct {
 // - func(...) _
 // - func(...) (_, error)
 func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, error) {
-	fnInfo := fnInfo{params: []openapi3.Parameter{}}
+	info := fnInfo{params: []openapi3.Parameter{}}
 	switch handler := fn.(type) {
 	case nil:
-		return nil, fnInfo, errNil
+		return nil, info, errNil
 	case func(http.ResponseWriter, *http.Request):
-		return handler, fnInfo, nil
+		return handler, info, nil
 	case http.HandlerFunc:
-		return handler, fnInfo, nil
+		return handler, info, nil
 	case http.Handler:
-		return handler.ServeHTTP, fnInfo, nil
+		return handler.ServeHTTP, info, nil
 	}
 
 	fnType := reflect.TypeOf(fn)
 	if err := container.IsValidRunFunc(fnType); err != nil {
-		return nil, fnInfo, err
+		return nil, info, err
 	}
-	fnInfo.hasReturns = fnType.NumOut() > 0
+	info.hasReturns = fnType.NumOut() > 0
 
 	fnParams := reflectUtil.GetFuncParams(fnType)
 	for _, p := range fnParams {
-		if isHttpType(p) {
+		if isHTTPType(p) {
 			// *http.Request and http.ResponseWriter will be passed in
 			// later so skip them
 			continue
@@ -569,13 +554,13 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 		// check for any parameters from the given fns input
 		params, err := openapi3.ParamsFromStruct(router.router.schemer, p)
 		if err != nil {
-			return nil, fnInfo, err
+			return nil, info, err
 		}
-		fnInfo.params = append(fnInfo.params, params...)
+		info.params = append(info.params, params...)
 
-		err = createProviderForType(p, router.Container, router.RequestBodyLoader, &fnInfo)
+		err = createProviderForType(p, router.Container, router.RequestBodyLoader, &info)
 		if err != nil {
-			return nil, fnInfo, err
+			return nil, info, err
 		}
 	}
 
@@ -589,7 +574,7 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 	file = path.Base(file)
 
 	ignore := []any{reqType, respWriterType}
-	if body := fnInfo.requestBody.Type; body != nil {
+	if body := info.requestBody.Type; body != nil {
 		ignore = append(ignore, body)
 		// TODO: explain
 		if reflectUtil.ArrayKind.Has(body.Kind()) {
@@ -599,7 +584,7 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 
 	plan, err := router.Container.CreatePlan(fn, ignore...)
 	if err != nil {
-		return nil, fnInfo, err
+		return nil, info, err
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		resp, err := router.Container.RunPlan(plan, &w, r)
@@ -610,5 +595,5 @@ func httpHandlerFromFn(fn any, router *DepRouter) (http.HandlerFunc, fnInfo, err
 			}
 			h(w, r, resp, err)
 		}
-	}, fnInfo, nil
+	}, info, nil
 }

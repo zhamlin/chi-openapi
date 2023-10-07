@@ -221,7 +221,7 @@ func TestGetParamAsStr(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, test.url, nil)
+			req := httptest.NewRequest(http.MethodGet, test.url, http.NoBody)
 			if test.headers != nil {
 				for header, value := range test.headers {
 					req.Header.Set(header, value)
@@ -333,7 +333,7 @@ func TestCreateTypeFromParam(t *testing.T) {
 			MustMatch(t, err, nil, "did not expect an error")
 			p.SetSchema(schema)
 
-			req := httptest.NewRequest(http.MethodGet, test.url, nil)
+			req := httptest.NewRequest(http.MethodGet, test.url, http.NoBody)
 			if test.headers != nil {
 				for header, value := range test.headers {
 					req.Header.Set(header, value)

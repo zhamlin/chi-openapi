@@ -517,7 +517,7 @@ func (c container) runWithCtx(ctx context, fn any) (any, error) {
 	fnValue := reflect.ValueOf(fn)
 	fnParams := reflectUtil.GetFuncParams(fnType)
 
-	outputs, err := c.runFn(ctx, fnType, fnValue, fnParams)
+	outputs, err := c.runFn(ctx, fnValue, fnParams)
 	if err != nil {
 		return nil, err
 	}
@@ -567,7 +567,6 @@ func runFn(
 
 func (c container) runFn(
 	ctx context,
-	fnType reflect.Type,
 	fnValue reflect.Value,
 	fnParams []reflect.Type,
 ) ([]reflect.Value, error) {
@@ -605,7 +604,7 @@ func (c container) createType(ctx context, typ reflect.Type) (reflect.Value, err
 	switch nodeType := providerNode.typ.(type) {
 	case nodeTypeProvider:
 		if nodeType.isFunc() {
-			outputs, err := c.runFn(ctx, providerNode.refelctType, nodeType.value, nodeType.params)
+			outputs, err := c.runFn(ctx, nodeType.value, nodeType.params)
 			if err != nil {
 				return emptyValue, err
 			}

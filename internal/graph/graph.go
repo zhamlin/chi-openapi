@@ -29,8 +29,8 @@ func TopologicalSort[T any](g *Graph[T]) ([]int, error) {
 }
 
 type ErrNodeCycle struct {
-	SourceIndex int
 	Indexes     []int
+	SourceIndex int
 }
 
 func (e ErrNodeCycle) FirstIndex() (int, bool) {
@@ -58,7 +58,6 @@ func visit[T any](
 			SourceIndex: nodeIndex,
 			Indexes:     []int{},
 		}
-		// return fmt.Errorf("cycle detected, node index: %v", nodeIndex)
 	}
 
 	nodeMarks[nodeIndex] = sortMarkTemporary
@@ -91,11 +90,12 @@ func New[T any]() *Graph[T] {
 
 // Append only
 type Graph[T any] struct {
-	nodes []T
 	// every edge from this index to other indexes
 	EdgesFromTo map[int]internal.Set[int]
 	// every edge from other indexes to this index
 	EdgesToFrom map[int]internal.Set[int]
+
+	nodes []T
 }
 
 func (g *Graph[T]) isValidIndex(idx int) error {

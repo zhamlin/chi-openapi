@@ -20,12 +20,12 @@ import (
 )
 
 func newDepRouter(t Tester) *router.DepRouter {
-	router := router.NewDepRouter(router.DepConfig{
+	r := router.NewDepRouter(router.DepConfig{
 		ResponseHandler: func(_ http.ResponseWriter, _ *http.Request, _ any, err error) {
 			MustMatch(t, err, nil, "request handler returned an error")
 		},
 	})
-	return router
+	return r
 }
 
 func do(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
@@ -72,7 +72,7 @@ func TestDepRouterLoadParams(t *testing.T) {
 		ResponseAs[struct{ A string }]("A", http.StatusOK, ""),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/?string=foo&custom=bar&other=foobar&number=2&name=name", nil)
+	req := httptest.NewRequest(http.MethodGet, "/?string=foo&custom=bar&other=foobar&number=2&name=name", http.NoBody)
 	resp := do(r, req)
 	MustMatch(t, resp.Code, http.StatusCreated)
 }
@@ -239,7 +239,7 @@ func TestDepRouterParamStyles(t *testing.T) {
 	r.Mount("/v1/", subRouter)
 
 	queryParams := "object[R]=100" + "&string=string" + "&array=a,b,c"
-	req := httptest.NewRequest(http.MethodGet, "/v1/color/red?"+queryParams, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/color/red?"+queryParams, http.NoBody)
 	resp := do(r, req)
 	MustMatch(t, resp.Code, http.StatusCreated)
 }
@@ -267,13 +267,13 @@ func TestDepRouterGroup(t *testing.T) {
 	})
 	r.Get("/no-middle", h, Response[B](http.StatusOK, ""))
 
-	req := httptest.NewRequest(http.MethodGet, "/group", nil)
+	req := httptest.NewRequest(http.MethodGet, "/group", http.NoBody)
 	resp := do(r, req)
 
 	MustMatch(t, resp.Header().Get("content-type"), "application/json",
 		"expected router group Use() middleware to run")
 
-	req = httptest.NewRequest(http.MethodGet, "/no-middle", nil)
+	req = httptest.NewRequest(http.MethodGet, "/no-middle", http.NoBody)
 	resp = do(r, req)
 
 	MustMatch(t, resp.Header().Get("content-type"), "",
@@ -523,7 +523,7 @@ func TestDepRouterWithMiddleware(t *testing.T) {
 	r.With(middle).Get("/middle", h)
 	r.Get("/no-middle", h)
 
-	req := httptest.NewRequest(http.MethodGet, "/middle", nil)
+	req := httptest.NewRequest(http.MethodGet, "/middle", http.NoBody)
 	resp := do(r, req)
 
 	MustMatch(t, resp.Header().Get("custom"), "hello world",
@@ -532,7 +532,7 @@ func TestDepRouterWithMiddleware(t *testing.T) {
 	MustMatch(t, resp.Header().Get("content-type"), "application/json",
 		"expected router.Use() middleware to run")
 
-	req = httptest.NewRequest(http.MethodGet, "/no-middle", nil)
+	req = httptest.NewRequest(http.MethodGet, "/no-middle", http.NoBody)
 	resp = do(r, req)
 
 	MustMatch(t, resp.Code, http.StatusCreated)
@@ -564,11 +564,10 @@ func TestDepRouterRequestHandler(t *testing.T) {
 	subRouter.Mount("/", subSubRouter)
 	rootRouter.Mount("/", subRouter)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	resp := do(rootRouter, req)
 	// the rootRouter RequestHandler takes precedence over all routers below it
 	MustMatch(t, resp.Code, http.StatusTeapot)
-
 }
 
 func TestDepRouterNested(t *testing.T) {
@@ -605,7 +604,7 @@ func TestDepRouterNested(t *testing.T) {
 	subRouter.Mount("/nested", subSubRouter)
 	rootRouter.Mount("/", subRouter)
 
-	req := httptest.NewRequest(http.MethodGet, "/nested/object/1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/nested/object/1", http.NoBody)
 	resp := do(rootRouter, req)
 	// the rootRouter RequestHandler takes precedence over all routers below it
 	MustMatch(t, resp.Code, http.StatusTeapot)
@@ -631,7 +630,7 @@ func TestDepRouterNoRouteInfoNeeded(t *testing.T) {
 	}
 	r.Get("/", h)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	resp := do(r, req)
 	MustMatch(t, resp.Code, http.StatusLocked)
 }
@@ -939,7 +938,7 @@ func BenchmarkDepRouter(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				test.router.ServeHTTP(resp, req)
 				if resp.Code != http.StatusCreated {
-					b.Fatal("incocrect status code")
+					b.Fatal("incorrect status code")
 				}
 				reader.Reset(data)
 			}

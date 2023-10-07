@@ -117,12 +117,12 @@ func (r DepRouter) OpenAPI() openapi3.OpenAPI {
 }
 
 // DefaultStatusResponse sets the default response for the specified status code on all operations.
-// Can be overriden at the route level.
+// Can be overridden at the route level.
 func (r *DepRouter) DefaultStatusResponse(code int, desc string, obj any, contentType ...string) {
 	r.router.DefaultStatusResponse(code, desc, obj, contentType...)
 }
 
-// DefaultResponse sets the default response on all operations. Can be overriden
+// DefaultResponse sets the default response on all operations. Can be overridden
 // at the route level.
 func (r *DepRouter) DefaultResponse(desc string, obj any, contentType ...string) {
 	r.router.DefaultResponse(desc, obj, contentType...)
@@ -141,11 +141,11 @@ func (r *DepRouter) Route(pattern string, fn func(r *DepRouter), args ...string)
 	subRouter.router.mux = newChiRouter()
 	setRouterGroupName(subRouter.router, args...)
 	fn(&subRouter)
-	r.Mount(pattern, &subRouter, args...)
+	r.Mount(pattern, &subRouter)
 }
 
 // Mount attaches another http.Handler along ./pattern/*
-func (r *DepRouter) Mount(pattern string, h http.Handler, args ...string) {
+func (r *DepRouter) Mount(pattern string, h http.Handler) {
 	if depRouter, ok := h.(*DepRouter); ok {
 		copyFns := func(router *DepRouter) {
 			router.ResponseHandler = r.ResponseHandler
@@ -159,7 +159,7 @@ func (r *DepRouter) Mount(pattern string, h http.Handler, args ...string) {
 		r.mounted = append(r.mounted, depRouter)
 		r.mounted = append(r.mounted, depRouter.mounted...)
 	}
-	r.router.Mount(pattern, h, args...)
+	r.router.Mount(pattern, h)
 }
 
 // With adds inline middlewares for an endpoint handler.
@@ -218,7 +218,7 @@ func (r *DepRouter) Method(method, pattern string, handler any, options ...opera
 
 	if getID := r.router.operationIDGrabber; getID != nil {
 		if id := getID(handler); id != "" {
-			// this option needs to come first so it can be overriden
+			// this option needs to come first so it can be overridden
 			// if Method was already supplied with an ID
 			options = append([]operations.Option{operations.ID(id)}, options...)
 		}

@@ -18,7 +18,7 @@ func TestGetRouteInfo(t *testing.T) {
 		Params(struct{}{}),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	// set the chi context with the correct info
 	ctx := req.Context()
 	chiCtx := chi.NewRouteContext()
@@ -33,7 +33,7 @@ func TestGetRouteInfo(t *testing.T) {
 	MustMatch(t, info.Operation.Operation == nil, false)
 	MustMatch(t, info.URLParams, map[string]string{"id": "1"})
 
-	req = httptest.NewRequest(http.MethodPost, "/", nil)
+	req = httptest.NewRequest(http.MethodPost, "/", http.NoBody)
 	_, has = newRouteInfo(r.OpenAPI(), req)
 	MustMatch(t, has, false, "POST not in openapi spec for /")
 }

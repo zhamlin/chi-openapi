@@ -216,11 +216,11 @@ func as[T any](name string, option Option) Option {
 	}
 }
 
-func BodyAs[T any](name string, desc string, required bool, contentType ...string) Option {
+func BodyAs[T any](name, desc string, required bool, contentType ...string) Option {
 	return as[T](name, Body[T](desc, required, contentType...))
 }
 
-func DefaultResponseAs[T any](name string, desc string, contentType ...string) Option {
+func DefaultResponseAs[T any](name, desc string, contentType ...string) Option {
 	return as[T](name, DefaultResponse[T](desc, contentType...))
 }
 

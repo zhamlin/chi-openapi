@@ -185,7 +185,7 @@ func (s Schemer) schemaFromType(typ reflect.Type) (Schema, error) {
 	var zeroInt = 0
 
 	typeName := s.GetTypeName(typ)
-	schema := Schema{}
+	schema := NewSchema()
 	kind := typ.Kind()
 	switch kind {
 	case reflect.Bool:
@@ -294,7 +294,7 @@ func (s Schemer) refOrSpec(t reflect.Type, schema Schema, useRef bool) *spec.Ref
 }
 
 func (s Schemer) schemaFromStruct(t reflect.Type) (Schema, error) {
-	schema := Schema{}
+	schema := NewSchema()
 	schema.Type = spec.NewSingleOrArray(spec.ObjectType)
 	schema.Properties = map[string]*spec.RefOrSpec[spec.Schema]{}
 

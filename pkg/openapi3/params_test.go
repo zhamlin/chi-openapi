@@ -45,7 +45,6 @@ func TestParamsFromStruct(t *testing.T) {
 			MustMatch(t, len(params), test.wantCount)
 		})
 	}
-
 }
 
 // func TestParamsFromStructError(t *testing.T) {

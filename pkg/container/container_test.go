@@ -102,7 +102,7 @@ func TestContainer(t *testing.T) {
 
 		calls := 0
 		c.Provide(func() string {
-			calls += 1
+			calls++
 			return "string"
 		})
 
@@ -197,7 +197,6 @@ func TestContainer(t *testing.T) {
 		value = resp.(C)
 		MustMatch(t, value.A.name, "A")
 	})
-
 }
 
 func TestContainerHooks(t *testing.T) {
@@ -348,7 +347,7 @@ func TestContainerCreatePlan(t *testing.T) {
 	c := container.New()
 	callCount := 0
 	c.Provide(func() context.Context {
-		callCount += 1
+		callCount++
 		return context.TODO()
 	})
 	c.Provide(func(ctx context.Context) A {
@@ -370,7 +369,6 @@ func TestContainerCreatePlan(t *testing.T) {
 		MustMatch(t, err, nil)
 		MustMatch(t, callCount, 1)
 	})
-
 }
 
 func TestContainerPlanConcurrent(t *testing.T) {
@@ -424,7 +422,6 @@ func TestContainerPlanConcurrent(t *testing.T) {
 			MustMatch(t, d.N, want)
 		}(i)
 	}
-
 }
 
 func TestContainerPlanIgnore(t *testing.T) {

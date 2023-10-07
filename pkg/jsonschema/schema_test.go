@@ -244,7 +244,6 @@ func TestSchema(t *testing.T) {
 			}
 			testutils.MustMatchAsJson(t, schema, test.want)
 		})
-
 	}
 }
 

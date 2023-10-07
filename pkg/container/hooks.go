@@ -25,18 +25,27 @@ type containerWithHooks struct {
 func (c containerWithHooks) Run(fn any, args ...any) (any, error) {
 	ctx := newContext(args...)
 	res, err := c.runWithCtx(ctx, fn)
+	if len(c.hooks) == 0 {
+		return res, err
+	}
 	return res, runHooks(ctx, c.hooks, err)
 }
 
 func (c containerWithHooks) RunPlan(plan Plan, args ...any) (any, error) {
 	ctx := newContext(args...)
 	res, err := c.runPlanWithContext(ctx, plan)
+	if len(c.hooks) == 0 {
+		return res, err
+	}
 	return res, runHooks(ctx, c.hooks, err)
 }
 
 func (c containerWithHooks) Create(obj any, args ...any) error {
 	ctx := newContext(args...)
 	err := c.createWithCtx(ctx, obj)
+	if len(c.hooks) == 0 {
+		return err
+	}
 	return runHooks(ctx, c.hooks, err)
 }
 

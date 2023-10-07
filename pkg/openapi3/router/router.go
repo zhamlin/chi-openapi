@@ -129,7 +129,7 @@ func (r *Router) WithSchemer(schemer jsonschema.Schemer) *Router {
 	return r
 }
 
-// DefaultResponse sets the default response on all operations. Can be overriden
+// DefaultResponse sets the default response on all operations. Can be overridden
 // at the route level.
 func (r *Router) DefaultResponse(desc string, obj any, contentType ...string) {
 	err := r.setDefaultStatusResponse("default", desc, obj, contentType...)
@@ -141,7 +141,7 @@ func (r *Router) DefaultResponse(desc string, obj any, contentType ...string) {
 }
 
 // DefaultStatusResponse sets the default response for the specified status code on all operations.
-// Can be overriden at the route level.
+// Can be overridden at the route level.
 func (r *Router) DefaultStatusResponse(code int, desc string, obj any, contentType ...string) {
 	statusCode := fmt.Sprintf("%d", code)
 	err := r.setDefaultStatusResponse(statusCode, desc, obj, contentType...)
@@ -152,7 +152,7 @@ func (r *Router) DefaultStatusResponse(code int, desc string, obj any, contentTy
 	r.defaultStatusRoutes[code] = "#/components/responses/" + statusCode
 }
 
-func (r *Router) setDefaultStatusResponse(code string, desc string, obj any, contentType ...string) error {
+func (r *Router) setDefaultStatusResponse(code, desc string, obj any, contentType ...string) error {
 	if len(contentType) == 0 {
 		contentType = []string{openapi3.JsonContentType}
 	}
@@ -223,7 +223,7 @@ func (r *Router) Route(pattern string, fn func(r *Router), args ...string) {
 	subRouter.mux = newChiRouter()
 	fn(&subRouter)
 	setRouterGroupName(&subRouter, args...)
-	r.Mount(pattern, &subRouter, args...)
+	r.Mount(pattern, &subRouter)
 }
 
 func joinPaths(a, b string) string {
@@ -231,7 +231,7 @@ func joinPaths(a, b string) string {
 	// path.Join removes any trailing / from b
 	// so add it back if it exists
 	if len(b) > 1 && b[len(b)-1] == '/' {
-		newPath = newPath + "/"
+		newPath += "/"
 	}
 	return newPath
 }
@@ -290,7 +290,7 @@ func (r *Router) copyComponents(from, to openapi3.Components) error {
 }
 
 // Mount attaches another http.Handler along ./pattern/*
-func (r *Router) Mount(pattern string, h http.Handler, args ...string) {
+func (r *Router) Mount(pattern string, h http.Handler) {
 	routers := []*DepRouter{}
 	var router *Router
 	switch r := h.(type) {

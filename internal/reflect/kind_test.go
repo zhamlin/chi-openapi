@@ -12,7 +12,7 @@ import (
 type unmarshaller struct {
 }
 
-func (u *unmarshaller) UnmarshalText(text []byte) error {
+func (u *unmarshaller) UnmarshalText(_ []byte) error {
 	return nil
 }
 

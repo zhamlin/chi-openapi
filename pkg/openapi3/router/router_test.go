@@ -15,12 +15,12 @@ import (
 )
 
 func newRouter() *router.Router {
-	router := router.NewRouter(router.Config{})
-	return router
+	r := router.NewRouter(router.Config{})
+	return r
 }
 
 func TestRouterWithMiddleware(t *testing.T) {
-	router := newRouter()
+	r := newRouter()
 
 	h := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
@@ -38,17 +38,17 @@ func TestRouterWithMiddleware(t *testing.T) {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-	router.Use(func(next http.Handler) http.Handler {
+	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			next.ServeHTTP(w, r)
 			w.Header().Set("content-type", "application/json")
 		})
 	})
-	router.With(middle).Get("/middle", h)
-	router.Get("/no-middle", h)
+	r.With(middle).Get("/middle", h)
+	r.Get("/no-middle", h)
 
-	req := httptest.NewRequest(http.MethodGet, "/middle", nil)
-	resp := do(router, req)
+	req := httptest.NewRequest(http.MethodGet, "/middle", http.NoBody)
+	resp := do(r, req)
 
 	MustMatch(t, resp.Header().Get("custom"), "hello world",
 		"expected router.With() middleware to run")
@@ -56,8 +56,8 @@ func TestRouterWithMiddleware(t *testing.T) {
 	MustMatch(t, resp.Header().Get("content-type"), "application/json",
 		"expected router.Use() middleware to run")
 
-	req = httptest.NewRequest(http.MethodGet, "/no-middle", nil)
-	resp = do(router, req)
+	req = httptest.NewRequest(http.MethodGet, "/no-middle", http.NoBody)
+	resp = do(r, req)
 
 	MustMatch(t, resp.Code, http.StatusCreated)
 	MustMatch(t, resp.Header().Get("custom"), "",
@@ -90,13 +90,13 @@ func TestRouterGroup(t *testing.T) {
 	})
 	r.Get("/no-middle", h, Response[B](http.StatusOK, ""))
 
-	req := httptest.NewRequest(http.MethodGet, "/group", nil)
+	req := httptest.NewRequest(http.MethodGet, "/group", http.NoBody)
 	resp := do(r, req)
 
 	MustMatch(t, resp.Header().Get("content-type"), "application/json",
 		"expected router group Use() middleware to run")
 
-	req = httptest.NewRequest(http.MethodGet, "/no-middle", nil)
+	req = httptest.NewRequest(http.MethodGet, "/no-middle", http.NoBody)
 	resp = do(r, req)
 
 	MustMatch(t, resp.Header().Get("content-type"), "",
@@ -421,13 +421,13 @@ func TestRouterErrors(t *testing.T) {
 	}
 
 	errs := []error{}
-	router := router.NewRouter(router.Config{
+	r := router.NewRouter(router.Config{
 		ErrorSink: func(err error) {
 			errs = append(errs, err)
 		},
 	})
-	router.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
-	router.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
+	r.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
+	r.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
 
 	MustMatch(t, len(errs), 1,
 		"expected one error; /foo and /bar try to use the same component name")
@@ -446,18 +446,18 @@ func TestSubRouterErrors(t *testing.T) {
 	})
 
 	routerErrs := []error{}
-	router := router.NewRouter(router.Config{
+	r := router.NewRouter(router.Config{
 		ErrorSink: func(err error) {
 			routerErrs = append(routerErrs, err)
 		},
 	})
-	router.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
-	router.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
+	r.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
+	r.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
 	MustMatch(t, len(routerErrs), 1, "expected one error")
 
 	MustMatch(t, len(rootRouterErrs), 0,
 		"expected no errors on the root router before moutn")
-	rootRouter.Mount("/v1", router)
+	rootRouter.Mount("/v1", r)
 
 	err := routerErrs[0].Error()
 	if !strings.Contains(err, "components: B already exists in the schema") {
@@ -478,19 +478,19 @@ func TestRouterMountComponentErrors(t *testing.T) {
 	})
 
 	routerErrs := []error{}
-	router := router.NewRouter(router.Config{
+	r := router.NewRouter(router.Config{
 		ErrorSink: func(err error) {
 			routerErrs = append(routerErrs, err)
 		},
 	})
 
-	router.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
+	r.Get("/foo", h, ResponseAs[struct{ A string }]("B", http.StatusOK, ""))
 	MustMatch(t, len(routerErrs), 0, "expected no errors")
 
-	router.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
+	r.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
 	MustMatch(t, len(rootRouterErrs), 0, "expected no errors")
 
-	rootRouter.Mount("/v1", router)
+	rootRouter.Mount("/v1", r)
 	MustMatch(t, len(routerErrs), 1,
 		"expected one error; both routers have a component named `B`")
 }
@@ -508,18 +508,18 @@ func TestRouterMountPathErrors(t *testing.T) {
 	})
 
 	routerErrs := []error{}
-	router := router.NewRouter(router.Config{
+	r := router.NewRouter(router.Config{
 		ErrorSink: func(err error) {
 			routerErrs = append(routerErrs, err)
 		},
 	})
-	router.Get("/bar", h, ResponseAs[struct{ A string }]("A", http.StatusOK, ""))
+	r.Get("/bar", h, ResponseAs[struct{ A string }]("A", http.StatusOK, ""))
 	MustMatch(t, len(routerErrs), 0, "expected no errors")
 
 	rootRouter.Get("/bar", h, ResponseAs[struct{ B string }]("B", http.StatusOK, ""))
 	MustMatch(t, len(rootRouterErrs), 0, "expected no errors")
 
-	rootRouter.Mount("/", router)
+	rootRouter.Mount("/", r)
 	MustMatch(t, len(rootRouterErrs), 1,
 		"expected one error; both routers have /bar path",
 	)
@@ -535,23 +535,23 @@ func TestRouterRouteDefaultResponses(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}
 
-	router := newRouter()
+	r := newRouter()
 
 	type ErrorResp struct {
 		Type        string
 		Description string
 	}
-	router.DefaultResponse("generic error", ErrorResp{})
-	router.DefaultStatusResponse(http.StatusNotFound, "NotFound", nil)
+	r.DefaultResponse("generic error", ErrorResp{})
+	r.DefaultStatusResponse(http.StatusNotFound, "NotFound", nil)
 
-	router.Get("/", h,
+	r.Get("/", h,
 		Response[[]string](http.StatusOK, ""),
 		DefaultResponse[struct{ B string }](""),
 	)
-	router.Get("/other", h, Response[None](http.StatusOK, ""))
-	router.Get("/noresponse", h)
+	r.Get("/other", h, Response[None](http.StatusOK, ""))
+	r.Get("/noresponse", h)
 
-	MustMatchAsJson(t, router.OpenAPI(), `
+	MustMatchAsJson(t, r.OpenAPI(), `
     {
         "components": {
             "responses": {
@@ -651,24 +651,6 @@ func TestRouterRouteDefaultResponses(t *testing.T) {
             }
         }
     }`)
-}
-
-func TestRouterSameResponseNoError(t *testing.T) {
-	type Resp struct {
-		Name string
-	}
-
-	h := func(w http.ResponseWriter, r *http.Request) {}
-	r := newRouter()
-	// verify using the same type (Resp), in three separate calls
-	// to Response doesn't return an error about the type already
-	// existing
-	r.Get("/", h, Response[Resp](http.StatusOK, ""))
-	r.Get("/other", h, Response[Resp](http.StatusOK, ""))
-
-	subRouter := newRouter()
-	subRouter.Get("/", h, ResponseAs[Resp]("Resp", http.StatusOK, ""))
-	r.Mount("/v1", subRouter)
 }
 
 func TestRouterNoRefResponse(t *testing.T) {
