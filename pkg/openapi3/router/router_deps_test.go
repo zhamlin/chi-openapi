@@ -796,6 +796,25 @@ func TestDepRouterNoResponseHandler(t *testing.T) {
 		true)
 }
 
+func TestDepRouterMultipleRequestBodies(t *testing.T) {
+	var errs []error
+	r := router.NewDepRouter(router.DepConfig{
+		Config: router.Config{
+			ErrorSink: func(err error) {
+				errs = append(errs, err)
+			},
+		},
+	})
+
+	r.Get("/", func(w http.ResponseWriter, r struct {
+		A []string `request:"body"`
+		B []int    `request:"body"`
+	}) {
+	})
+	MustMatch(t, len(errs), 1, "expected an error")
+	MustMatch(t, strings.Contains(errs[0].Error(), `found two request bodies`), true)
+}
+
 func BenchmarkDepRouter(b *testing.B) {
 	type RequestBody struct {
 		String string `json:"string"`

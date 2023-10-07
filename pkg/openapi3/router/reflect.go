@@ -361,8 +361,14 @@ func createProviderForType(
 
 	inputTypes := []reflect.Type{}
 	for field := range fields {
-		// TODO: check for an already set request body
-		if field.isRequestBody {
+		if field.isRequestBody && fnInfo.requestBody.Type != nil {
+			return fmt.Errorf("found two request bodies %s: %s, %s: %s",
+				fnInfo.requestBody.Name,
+				fnInfo.requestBody.Type.String(),
+				typ.Field(field.fieldIndex).Name,
+				field.Type.String(),
+			)
+		} else if field.isRequestBody {
 			structField := typ.Field(field.fieldIndex)
 			fnInfo.requestBody = structField
 			// skip adding the request body as a function param
