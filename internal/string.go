@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -19,11 +19,5 @@ func TrimString(str string) string {
 }
 
 func BoolFromString(str string) (bool, error) {
-	switch str {
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	}
-	return false, fmt.Errorf("invalid bool: %s", str)
+	return strconv.ParseBool(str)
 }
