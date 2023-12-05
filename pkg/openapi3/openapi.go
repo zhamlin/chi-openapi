@@ -17,7 +17,7 @@ func NewTag() Tag {
 	return Tag{spec.NewTag()}
 }
 
-const JsonContentType = "application/json"
+const JSONContentType = "application/json"
 
 type OpenAPI struct {
 	*spec.OpenAPI

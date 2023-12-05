@@ -213,9 +213,9 @@ func canLoadQueryParam(typ reflect.Type, style ParameterStyle) bool {
 	return false
 }
 
-type paramValidion struct {
-	in    []ParameterLocation
+type paramValidation struct {
 	kinds internal.Set[reflect.Kind]
+	in    []ParameterLocation
 }
 
 func kinds(sets ...internal.Set[reflect.Kind]) internal.Set[reflect.Kind] {
@@ -229,7 +229,7 @@ func kinds(sets ...internal.Set[reflect.Kind]) internal.Set[reflect.Kind] {
 }
 
 // https://spec.openapis.org/oas/v3.1.0#styleValues
-var paramValidations = map[ParameterStyle]paramValidion{
+var paramValidations = map[ParameterStyle]paramValidation{
 	ParameterStyleDeepObject: {
 		in: []ParameterLocation{
 			ParameterLocationQuery,

@@ -51,7 +51,7 @@ func NewRouter(cfg Config) *Router {
 	spec.Info.Spec.Version = cfg.Version
 
 	if cfg.DefaultContentType == "" {
-		cfg.DefaultContentType = openapi3.JsonContentType
+		cfg.DefaultContentType = openapi3.JSONContentType
 	}
 
 	if cfg.ErrorSink == nil {
@@ -154,7 +154,7 @@ func (r *Router) DefaultStatusResponse(code int, desc string, obj any, contentTy
 
 func (r *Router) setDefaultStatusResponse(code, desc string, obj any, contentType ...string) error {
 	if len(contentType) == 0 {
-		contentType = []string{openapi3.JsonContentType}
+		contentType = []string{openapi3.JSONContentType}
 	}
 
 	resp := openapi3.Response{}
