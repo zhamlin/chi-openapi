@@ -128,8 +128,6 @@ func (r *DepRouter) DefaultResponse(desc string, obj any, contentType ...string)
 	r.router.DefaultResponse(desc, obj, contentType...)
 }
 
-// chi router methods
-
 func (r DepRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.router.ServeHTTP(w, req)
 }
@@ -138,7 +136,7 @@ func (r DepRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *DepRouter) Route(pattern string, fn func(r *DepRouter), args ...string) {
 	subRouter := r.clone()
 	subRouter.router.spec = openapi3.NewOpenAPI("subrouter")
-	subRouter.router.mux = newChiRouter()
+	subRouter.router.mux = r.router.newMux()
 	setRouterGroupName(subRouter.router, args...)
 	fn(&subRouter)
 	r.Mount(pattern, &subRouter)
@@ -182,20 +180,6 @@ func (r *DepRouter) Group(fn func(r *DepRouter)) {
 		depRouter.router = r
 		fn(&depRouter)
 	})
-}
-
-// MethodNotAllowed defines a handler to respond whenever a method is
-// not allowed.
-func (r *DepRouter) MethodNotAllowed(handler any) {
-	h, _ := r.createHandler(handler)
-	r.router.MethodNotAllowed(h)
-}
-
-// NotFound defines a handler to respond whenever a route could
-// not be found.
-func (r *DepRouter) NotFound(handler any) {
-	h, _ := r.createHandler(handler)
-	r.router.NotFound(h)
 }
 
 func addParams(params []openapi3.Parameter) operations.Option {

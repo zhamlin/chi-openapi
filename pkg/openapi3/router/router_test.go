@@ -799,4 +799,40 @@ func TestRouterArrayItems(t *testing.T) {
     }`)
 }
 
-// TODO: Route
+func TestRouterRoute(t *testing.T) {
+	r := newRouter()
+	h := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}
+
+	r.Route("/foo", func(r *router.Router) {
+		r.Route("/bar", func(r *router.Router) {
+			r.Get("/", h,
+				Response[None](http.StatusOK, ""),
+			)
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/foo/bar", http.NoBody)
+	resp := do(r, req)
+	MustMatch(t, resp.Code, http.StatusTeapot)
+
+	MustMatchAsJson(t, r.OpenAPI(), `
+    {
+        "components": {},
+        "info": {
+            "title": "",
+            "version": ""
+        },
+        "openapi": "3.1.0",
+        "paths": {
+            "/foo/bar": {
+                "get": {
+                    "responses": {
+                        "200": {}
+                    }
+                }
+            }
+        }
+    }`)
+}

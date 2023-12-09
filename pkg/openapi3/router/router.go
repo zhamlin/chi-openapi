@@ -10,8 +10,6 @@ import (
 	"github.com/zhamlin/chi-openapi/pkg/jsonschema"
 	"github.com/zhamlin/chi-openapi/pkg/openapi3"
 	"github.com/zhamlin/chi-openapi/pkg/openapi3/operations"
-
-	"github.com/go-chi/chi/v5"
 )
 
 func setRouterGroupName(r *Router, args ...string) {
@@ -26,8 +24,32 @@ func setRouterGroupName(r *Router, args ...string) {
 	}
 }
 
-func newChiRouter() chi.Router {
-	return chi.NewRouter()
+type BaseRouter interface {
+	http.Handler
+
+	// Use appends one or more middlewares onto the Router stack.
+	Use(middlewares ...func(http.Handler) http.Handler)
+
+	// With adds inline middlewares for an endpoint handler.
+	With(middlewares ...func(http.Handler) http.Handler) BaseRouter
+
+	// Group adds a new inline-Router along the current routing
+	// path, with a fresh middleware stack for the inline-Router.
+	Group(fn func(r BaseRouter)) BaseRouter
+
+	// Route mounts a sub-Router along a `pattern`` string.
+	Route(pattern string, fn func(r BaseRouter)) BaseRouter
+
+	// Mount attaches another http.Handler along ./pattern/*
+	Mount(pattern string, h http.Handler)
+
+	// Method and MethodFunc adds routes for `pattern` that matches
+	// the `method` HTTP method.
+	Method(method, pattern string, h http.Handler)
+
+	// Handle and HandleFunc adds routes for `pattern` that matches
+	// all HTTP methods.
+	Handle(pattern string, h http.Handler)
 }
 
 type Config struct {
@@ -35,10 +57,15 @@ type Config struct {
 	Version            string
 	DefaultContentType string
 
-	AddRouteInfo       bool
+	AddRouteInfo        bool
+	RouteInfoMiddleware func(http.Handler) http.Handler
+
 	Schemer            *jsonschema.Schemer
 	OperationIDGrabber func(any) string
 	ErrorSink          func(error)
+
+	BaseRouter    BaseRouter
+	NewBaseRouter func() BaseRouter
 }
 
 func (c *Config) WithSchemer(schemer jsonschema.Schemer) *Config {
@@ -46,10 +73,7 @@ func (c *Config) WithSchemer(schemer jsonschema.Schemer) *Config {
 	return c
 }
 
-func NewRouter(cfg Config) *Router {
-	spec := openapi3.NewOpenAPI(cfg.Title)
-	spec.Info.Spec.Version = cfg.Version
-
+func setConfigDefaults(cfg Config) Config {
 	if cfg.DefaultContentType == "" {
 		cfg.DefaultContentType = openapi3.JSONContentType
 	}
@@ -71,23 +95,51 @@ func NewRouter(cfg Config) *Router {
 		cfg.Schemer = &schemer
 	}
 
-	return &Router{
-		spec:                spec,
-		mux:                 newChiRouter(),
+	if cfg.NewBaseRouter == nil {
+		cfg.NewBaseRouter = func() BaseRouter {
+			return newChiRouter()
+		}
+	}
+
+	if cfg.BaseRouter == nil {
+		cfg.BaseRouter = cfg.NewBaseRouter()
+	}
+
+	return cfg
+}
+
+func NewRouter(cfg Config) *Router {
+	spec := openapi3.NewOpenAPI(cfg.Title)
+	spec.Info.Spec.Version = cfg.Version
+
+	cfg = setConfigDefaults(cfg)
+	router := &Router{
+		spec:   spec,
+		mux:    cfg.BaseRouter,
+		newMux: cfg.NewBaseRouter,
+
 		defaultStatusRoutes: map[int]string{},
 		defaultRouteRef:     "",
 		schemer:             *cfg.Schemer,
 		defaultContentType:  cfg.DefaultContentType,
 		operationIDGrabber:  cfg.OperationIDGrabber,
 		errorSink:           cfg.ErrorSink,
+
 		addRouteInfo:        cfg.AddRouteInfo,
+		routeInfoMiddleware: cfg.RouteInfoMiddleware,
 	}
+
+	if router.routeInfoMiddleware == nil {
+		router.routeInfoMiddleware = addRouteInfo(router, newChiRouteInfo)
+	}
+	return router
 }
 
 type Router struct {
 	spec    openapi3.OpenAPI
 	schemer jsonschema.Schemer
-	mux     chi.Router
+	mux     BaseRouter
+	newMux  func() BaseRouter
 
 	// name of the tag to apply on all operations
 	groupName string
@@ -102,7 +154,8 @@ type Router struct {
 	operationIDGrabber func(any) string
 	errorSink          func(error)
 
-	addRouteInfo bool
+	addRouteInfo        bool
+	routeInfoMiddleware func(http.Handler) http.Handler
 }
 
 func (r Router) Schemer() jsonschema.Schemer {
@@ -205,12 +258,14 @@ func (r Router) clone() Router {
 		spec:                r.spec,
 		schemer:             r.schemer,
 		mux:                 r.mux,
+		newMux:              r.newMux,
 		groupName:           r.groupName,
 		defaultStatusRoutes: r.defaultStatusRoutes,
 		defaultRouteRef:     r.defaultRouteRef,
 		defaultContentType:  r.defaultContentType,
 		errorSink:           r.errorSink,
 		operationIDGrabber:  r.operationIDGrabber,
+		routeInfoMiddleware: r.routeInfoMiddleware,
 	}
 }
 
@@ -220,7 +275,7 @@ func (r Router) clone() Router {
 func (r *Router) Route(pattern string, fn func(r *Router), args ...string) {
 	subRouter := r.clone()
 	subRouter.spec = openapi3.NewOpenAPI("subrouter")
-	subRouter.mux = newChiRouter()
+	subRouter.mux = r.newMux()
 	fn(&subRouter)
 	setRouterGroupName(&subRouter, args...)
 	r.Mount(pattern, &subRouter)
@@ -358,18 +413,6 @@ func (r Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.mux.ServeHTTP(w, req)
 }
 
-// MethodNotAllowed defines a handler to respond whenever a method is
-// not allowed.
-func (r *Router) MethodNotAllowed(h http.HandlerFunc) {
-	r.mux.MethodNotAllowed(h)
-}
-
-// NotFound defines a handler to respond whenever a route could
-// not be found.
-func (r *Router) NotFound(h http.HandlerFunc) {
-	r.mux.NotFound(h)
-}
-
 // Method adds routes for `pattern` that matches the `method` HTTP method.
 func (r *Router) Method(method, pattern string, h http.HandlerFunc, options ...operations.Option) {
 	pathItem, has := r.spec.GetPath(pattern)
@@ -422,7 +465,7 @@ func (r *Router) Method(method, pattern string, h http.HandlerFunc, options ...o
 		// Because chi.Context works, to get the full path needed to match to an openapi path the
 		// middleware needs to run at the _last_ router (if there are any mounted routers). The
 		// easiest place to do so is right before the handler
-		r.mux.With(addRouteInfo(r)).Method(method, pattern, h)
+		r.mux.With(r.routeInfoMiddleware).Method(method, pattern, h)
 	} else {
 		r.mux.Method(method, pattern, h)
 	}

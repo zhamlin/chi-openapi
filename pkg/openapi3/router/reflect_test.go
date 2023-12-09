@@ -1,7 +1,6 @@
 package router
 
 import (
-	"context"
 	"errors"
 	"math"
 	"net/http"
@@ -10,14 +9,13 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/zhamlin/chi-openapi/internal"
 	"github.com/zhamlin/chi-openapi/pkg/container"
 	"github.com/zhamlin/chi-openapi/pkg/jsonschema"
 	"github.com/zhamlin/chi-openapi/pkg/openapi3"
 
 	. "github.com/zhamlin/chi-openapi/internal/testing"
-	. "github.com/zhamlin/chi-openapi/pkg/openapi3/operations"
+	op "github.com/zhamlin/chi-openapi/pkg/openapi3/operations"
 )
 
 type unmarshaller struct {
@@ -311,10 +309,9 @@ func TestCreateTypeFromParam(t *testing.T) {
 
 	r := NewRouter(Config{})
 	r.Get("/", nil)
-	r.Get("/color/{this-value-is-not-used}", nil, Params(struct {
+	r.Get("/color/{color}", nil, op.Params(struct {
 		// because the router isn't being used, the path route doesn't matter above.
-		// only the path name on the field does. Outside of testing, the two should
-		// always match
+		// only the path name on the field does
 		Color string `path:"color"`
 	}{}))
 
@@ -339,6 +336,7 @@ func TestCreateTypeFromParam(t *testing.T) {
 					req.Header.Set(header, value)
 				}
 			}
+
 			if test.cookies != nil {
 				for cookie, value := range test.cookies {
 					cookie := http.Cookie{Name: cookie, Value: value}
@@ -346,17 +344,13 @@ func TestCreateTypeFromParam(t *testing.T) {
 				}
 			}
 
-			chiCtx := chi.NewRouteContext()
-			if matched := r.mux.Match(chiCtx, req.Method, req.URL.Path); matched {
-				ctx := req.Context()
-				req = req.WithContext(context.WithValue(ctx, chi.RouteCtxKey, chiCtx))
+			routePattern := "/"
+			if req.URL.Path != "/" {
+				routePattern = "/color/{color}"
 			}
+			info, err := newRouteInfo(routePattern, test.urlParams, r.OpenAPI(), req)
+			MustMatch(t, err, nil, "must get a valid RouteInfo")
 
-			info, has := newRouteInfo(r.OpenAPI(), req)
-			MustMatch(t, has, true, "must get a valid RouteInfo")
-			if test.urlParams != nil {
-				info.URLParams = test.urlParams
-			}
 			value := reflect.New(wantType).Elem()
 			value, err = loadTypeFromParam(value, p, info)
 			if test.wantErr {

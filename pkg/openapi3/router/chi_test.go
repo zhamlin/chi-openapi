@@ -7,15 +7,16 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	op "github.com/zhamlin/chi-openapi/pkg/openapi3/operations"
+
 	. "github.com/zhamlin/chi-openapi/internal/testing"
-	. "github.com/zhamlin/chi-openapi/pkg/openapi3/operations"
 )
 
-func TestGetRouteInfo(t *testing.T) {
+func TestChiGetRouteInfo(t *testing.T) {
 	r := NewRouter(Config{})
 	r.Get("/", nil,
-		Summary("the operation"),
-		Params(struct{}{}),
+		op.Summary("the operation"),
+		op.Params(struct{}{}),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
@@ -27,14 +28,14 @@ func TestGetRouteInfo(t *testing.T) {
 	chiCtx.URLParams.Values = []string{"1"}
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, chiCtx)
 
-	info, has := newRouteInfo(r.OpenAPI(), req.WithContext(ctx))
+	info, has := newChiRouteInfo(r.OpenAPI(), req.WithContext(ctx))
 	MustMatch(t, has, true, "expected an operation to be found")
 	MustMatch(t, info.Operation.Summary, "the operation")
 	MustMatch(t, info.Operation.Operation == nil, false)
 	MustMatch(t, info.URLParams, map[string]string{"id": "1"})
 
 	req = httptest.NewRequest(http.MethodPost, "/", http.NoBody)
-	_, has = newRouteInfo(r.OpenAPI(), req)
+	_, has = newChiRouteInfo(r.OpenAPI(), req)
 	MustMatch(t, has, false, "POST not in openapi spec for /")
 }
 
