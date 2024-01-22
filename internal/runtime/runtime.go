@@ -18,8 +18,9 @@ func GetCaller(skip int) string {
 				strings.Contains(file, "chi-openapi/internal")
 			inLocalTestFile := inPackge && strings.Contains(file, "_test")
 			if !inPackge || inLocalTestFile {
-				trimmedFile := path.Base(file)
-				return fmt.Sprintf("%s:%d", trimmedFile, line)
+				base, name := path.Split(file)
+				trimmedBase := path.Base(base)
+				return fmt.Sprintf("%s:%d", path.Join(trimmedBase, name), line)
 			}
 		}
 		skip++
