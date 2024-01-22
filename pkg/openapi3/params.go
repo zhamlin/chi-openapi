@@ -308,6 +308,11 @@ func validateStyleWithType(typ reflect.Type, style ParameterStyle, loc Parameter
 		}
 	}
 	if !correctKind || !correctLocation {
+		// TODO: Add test for this
+		if !correctKind && reflectUtil.TypeImplementsTextUnmarshal(typ) {
+			return nil
+		}
+
 		return fmt.Errorf(
 			"incorrect style (%s), kind (%s) or location (%s) for %s\nAllowed kinds: %s\nAllowed Locations: %v",
 			style, typ.Kind(), loc, typ.String(), validation.kinds, validation.in,
