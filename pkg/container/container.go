@@ -254,6 +254,7 @@ func (c container) provideFn(fn reflect.Value) {
 			nodeIdx = c.graph.Add(newNodeFromType(param))
 			c.typeIndexes[param] = nodeIdx
 		}
+
 		if err := c.graph.AddEdges(nodeIdx, fnNodeID); err != nil {
 			c.handleErr(err)
 			return
@@ -344,6 +345,8 @@ type Plan struct {
 	fn              reflect.Value
 	fnParams        []reflect.Type
 
+	IsVariadic bool
+
 	// Track the max array size needed to contain all of the functions params.
 	// This allows one allocation for all of the function inputs once per plan run
 	maxParamCount int
@@ -370,13 +373,23 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 		fn:              reflect.ValueOf(fn),
 		fnParams:        fnParams,
 		maxParamCount:   len(fnParams),
+		IsVariadic:      fnType.IsVariadic(),
 	}
 
-	neededTypes := internal.NewSet[reflect.Type]()
+	type neededType struct {
+		typ    reflect.Type
+		usedBy reflect.Type
+	}
+	neededTypes := internal.NewSet[neededType]()
 	// from the provided index recursively get the indexes of all
 	// the provider nodes required to create it.
 	var visit func(idx int) []int
 	visit = func(idx int) []int {
+		var wantedByType reflect.Type
+		if wantedBy, err := c.graph.Get(idx); err == nil {
+			wantedByType = wantedBy.Type()
+		}
+
 		indexes := []int{}
 		for edgeIndex := range c.graph.EdgesToFrom[idx] {
 			n, err := c.graph.Get(edgeIndex)
@@ -394,7 +407,10 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 				}
 				indexes = append(indexes, edgeIndex)
 			} else {
-				neededTypes.Add(n.refelctType)
+				neededTypes.Add(neededType{
+					typ:    n.refelctType,
+					usedBy: wantedByType,
+				})
 			}
 			indexes = append(indexes, visit(edgeIndex)...)
 		}
@@ -421,9 +437,15 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 		return !missingType || shouldIgnore(t)
 	}
 
-	for _, pType := range plan.fnParams {
+	lastIdx := len(plan.fnParams) - 1
+	for i, pType := range plan.fnParams {
 		idx, has := c.typeIndexes[pType]
 		if !canCreateType(pType, idx, has) {
+			if plan.IsVariadic && i == lastIdx {
+				// variadic items are optional, so if it does not exit
+				// continue vs return an error
+				continue
+			}
 			return plan, fmt.Errorf("container can not create the type: %s", pType.String())
 		}
 		indexes := visit(idx)
@@ -432,12 +454,18 @@ func (c container) CreatePlan(fn any, ignore ...any) (Plan, error) {
 
 	// verify the needed types can be created
 	for t := range neededTypes {
-		idx, has := c.typeIndexes[t]
-		if !canCreateType(t, idx, has) {
-			return plan, fmt.Errorf("container can not create the type: %s", t.String())
+		idx, has := c.typeIndexes[t.typ]
+		if !canCreateType(t.typ, idx, has) {
+			if t.usedBy.Kind() == reflect.Func && t.usedBy.IsVariadic() {
+				variadicType := t.usedBy.In(t.usedBy.NumIn() - 1)
+				if variadicType == t.typ {
+					continue
+				}
+			}
+			return plan, fmt.Errorf("container can not create the type: %s: for %s", t.typ.String(), t.usedBy)
 		}
 		if len(c.graph.EdgesFromTo[idx]) > 0 && len(c.graph.EdgesToFrom[idx]) > 1 {
-			return plan, fmt.Errorf("container has more than one way to create the type: %s", t.String())
+			return plan, fmt.Errorf("container has more than one way to create the type: %s", t.typ.String())
 		}
 	}
 
@@ -462,14 +490,26 @@ func (c container) runPlanWithContext(ctx context, plan Plan) (any, error) {
 
 	inputs := make([]reflect.Value, plan.maxParamCount)
 	callFn := func(fn reflect.Value, params []reflect.Type) ([]reflect.Value, error) {
+		fnType := fn.Type()
+		fnIsVariadic := fnType.IsVariadic()
+		lastIdx := len(params) - 1
+
 		for i, pType := range params {
 			param, has := ctx.Get(pType)
-			if !has {
+			typIsVariadic := fnIsVariadic && i == lastIdx
+			if !has && typIsVariadic {
+				// is no variadic arg was found, create an empty array
+				param = reflect.New(pType).Elem()
+			} else if !has {
 				// this shouldn't happen unless this type was ignored during
 				// plan creation
 				return nil, fmt.Errorf("context did not have %s", pType.String())
 			}
 			inputs[i] = param
+		}
+
+		if fnIsVariadic {
+			return fn.CallSlice(inputs[:len(params)]), nil
 		}
 		return fn.Call(inputs[:len(params)]), nil
 	}
@@ -548,15 +588,30 @@ func runFn(
 	fnParams []reflect.Type,
 	loader typeLoader,
 ) ([]reflect.Value, error) {
-	inputParams := make([]reflect.Value, 0, len(fnParams))
-	for _, param := range fnParams {
+	fnIsVariadic := fnValue.Type().IsVariadic()
+
+	inputParams := make([]reflect.Value, len(fnParams))
+	lastParam := len(fnParams) - 1
+	for i, param := range fnParams {
 		value, err := loader(param)
 		if err != nil {
-			return nil, err
+			var canNotCreate errCanNotCreate
+			if errors.As(err, &canNotCreate) && (fnIsVariadic && lastParam == i) {
+				value = reflect.New(param).Elem()
+			} else {
+				return nil, err
+			}
 		}
-		inputParams = append(inputParams, value)
+		inputParams[i] = value
 	}
-	outputs := fnValue.Call(inputParams)
+
+	var outputs []reflect.Value
+	if fnIsVariadic {
+		outputs = fnValue.CallSlice(inputParams)
+	} else {
+		outputs = fnValue.Call(inputParams)
+	}
+
 	for _, output := range outputs {
 		if err := isNonNilErr(output); err != nil {
 			return nil, err
@@ -575,6 +630,14 @@ func (c container) runFn(
 	})
 }
 
+type errCanNotCreate struct {
+	Type reflect.Type
+}
+
+func (e errCanNotCreate) Error() string {
+	return fmt.Sprintf("container can not create the type: %v", e.Type.String())
+}
+
 func (c container) createType(ctx context, typ reflect.Type) (reflect.Value, error) {
 	if value, has := ctx.Get(typ); has {
 		return value, nil
@@ -589,8 +652,9 @@ func (c container) createType(ctx context, typ reflect.Type) (reflect.Value, err
 	edges := c.graph.EdgesToFrom
 	indexes, has := edges[typIndex]
 	if !has || len(indexes) == 0 {
-		return emptyValue, fmt.Errorf("container can not create the type: %v", typ.String())
+		return emptyValue, errCanNotCreate{Type: typ}
 	}
+
 	if len(indexes) > 1 {
 		return emptyValue, fmt.Errorf("more than one way to create type: %v", typ.String())
 	}

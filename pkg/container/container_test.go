@@ -483,10 +483,123 @@ func TestContainerPlanOrder(t *testing.T) {
 	MustMatch(t, res, Tree{})
 }
 
+func TestContainerPlanVariadic(t *testing.T) {
+	fn := func(numbers ...int) int {
+		if len(numbers) == 1 {
+			return numbers[0]
+		}
+		return 1
+	}
+
+	t.Run("no value provided", func(t *testing.T) {
+		c := container.New()
+		plan, err := c.CreatePlan(fn)
+		MustMatch(t, err, nil)
+
+		res, err := c.RunPlan(plan)
+		MustMatch(t, err, nil)
+		MustMatch(t, res, 1)
+	})
+
+	t.Run("value provided", func(t *testing.T) {
+		c := container.New()
+		c.Provide([]int{7})
+		plan, err := c.CreatePlan(fn)
+		MustMatch(t, err, nil)
+
+		res, err := c.RunPlan(plan)
+		MustMatch(t, err, nil)
+		MustMatch(t, res, 7)
+	})
+
+	t.Run("variadic dep no value", func(t *testing.T) {
+		c := container.New()
+		c.Provide(fn)
+		plan, err := c.CreatePlan(func(n int) int {
+			return n * 2
+		})
+		MustMatch(t, err, nil)
+
+		res, err := c.RunPlan(plan)
+		MustMatch(t, err, nil)
+		MustMatch(t, res, 2)
+	})
+
+	t.Run("variadic dep with value", func(t *testing.T) {
+		c := container.New()
+		c.Provide(fn)
+		c.Provide([]int{7})
+		plan, err := c.CreatePlan(func(n int) int {
+			return n * 2
+		})
+		MustMatch(t, err, nil)
+
+		res, err := c.RunPlan(plan)
+		MustMatch(t, err, nil)
+		MustMatch(t, res, 14)
+	})
+}
+
+func TestContainerCreateVariadic(t *testing.T) {
+	fn := func(numbers ...int) int {
+		if len(numbers) == 1 {
+			return numbers[0]
+		}
+		return 1
+	}
+
+	t.Run("no value provided", func(t *testing.T) {
+		c := container.New()
+		c.Provide(fn)
+
+		var want int
+		err := c.Create(&want)
+		MustMatch(t, err, nil)
+		MustMatch(t, want, 1)
+	})
+
+	t.Run("value provided", func(t *testing.T) {
+		c := container.New()
+		c.Provide([]int{7})
+		c.Provide(fn)
+
+		var want int
+		err := c.Create(&want)
+		MustMatch(t, err, nil)
+		MustMatch(t, want, 7)
+	})
+
+	t.Run("variadic dep no value", func(t *testing.T) {
+		c := container.New()
+		c.Provide(fn)
+		c.Provide(func(n int) int64 {
+			return int64(n) * 2
+		})
+
+		var want int64
+		err := c.Create(&want)
+		MustMatch(t, err, nil)
+		MustMatch(t, want, int64(2))
+	})
+
+	t.Run("variadic dep with value", func(t *testing.T) {
+		c := container.New()
+		c.Provide(fn)
+		c.Provide([]int{7})
+		c.Provide(func(n int) int64 {
+			return int64(n) * 2
+		})
+
+		var want int64
+		err := c.Create(&want)
+		MustMatch(t, err, nil)
+		MustMatch(t, want, int64(14))
+	})
+}
+
 func createProvider[In any, Out any]() func(In) Out {
 	return func(_ In) Out {
-		var obj Out
-		return obj
+		return *new(Out)
 	}
 }
 
